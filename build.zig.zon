@@ -1,0 +1,12 @@
+.{
+    .name = .UAV_Streaming,
+    .version = "0.0.0",
+    .fingerprint = 0x2ab87db18a6a26fd, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

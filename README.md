@@ -1,1 +1,6 @@
-# UAV_Streaming
+# Goals (Order of importance)
+
+- Lossless
+- Minimum Latency
+- Highest resolution
+

@@ -1,6 +1,5 @@
 import socket
-import struct
-from time import time, sleep
+from time import sleep
 
 client_address = ("127.0.0.1", 2002)
 server_address = ("127.0.0.1", 2004)
@@ -10,8 +9,9 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 client_socket.bind(client_address)
 
 client_socket.sendto(b"START", server_address)
-messages = [i for i in range(100_000)]
+messages = ["HELLO".encode()] * 100_000
+print(len(messages))
 
-for _ in range(100_000):
-    client_socket.sendto(struct.pack("!d", time()), proxy_server_address)
-    sleep(0.001)
+for message in messages:
+    client_socket.sendto(message, proxy_server_address)
+    sleep(0.0001)  # Simulate a small delay between sends

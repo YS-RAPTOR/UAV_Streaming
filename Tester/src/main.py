@@ -36,10 +36,23 @@ class Application:
             self.add_to_latency_queue()
             self.promote_packet_to_be_sent()
 
+    def corrupt_data(self, packet: Packet):
+        i = self.rng.randint(0, len(packet.data) - 1)
+        b = packet.data[i] ^ (1 << self.rng.randint(0, 7))
+        packet.data = packet.data[:i] + bytes([b]) + packet.data[i + 1 :]
+
     def send_packets(self):
         while len(self.unsorted_packet_send_list) > 0:
             try:
                 packet = self.unsorted_packet_send_list[-1]
+                corruption_rate = self.settings.packet_corruption_rate.get()
+                if self.rng.random() < corruption_rate:
+                    if self.rng.random() < self.settings.double_corruption:
+                        self.corrupt_data(packet)
+                        self.corrupt_data(packet)
+                    else:
+                        self.corrupt_data(packet)
+
                 self.socket.sendto(packet.data, packet.send_address)
                 self.unsorted_packet_send_list.pop()
             except BlockingIOError:
@@ -117,9 +130,10 @@ if __name__ == "__main__":
         rng=main_rng,
         settings=Settings(
             bandwidth=ConstantProvider(10_000_000),
-            latency=ConstantProvider(1),
+            latency=ConstantProvider(0),
             packet_loss_rate=ConstantProvider(0),
-            packet_corruption_rate=ConstantProvider(0),
+            packet_corruption_rate=ConstantProvider(0.5),
+            double_corruption=0.1,
         ),
     )
     app.run()

@@ -26,6 +26,7 @@ class Settings:
     latency: Provider  # seconds
     packet_loss_rate: Provider  # percentage [0-1]
     packet_corruption_rate: Provider  # percentage [0-1]
+    double_corruption: float  # percentage [0-1]
 
 
 @dataclass

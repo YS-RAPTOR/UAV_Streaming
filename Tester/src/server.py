@@ -1,31 +1,30 @@
 import socket
-import time
-import struct
 
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_address = ("127.0.0.1", 2004)
 server_socket.bind(server_address)
-server_socket.setblocking(False)
 
 print(f"Starting listening server on {server_address[0]}:{server_address[1]}")
 
-start_time = None
-latency_bytes = []
+corruption = []
+non_corrupted = 0
+total = 0
 
+while True:
+    data, address = server_socket.recvfrom(4096)
+    print(f"Received {len(data)} bytes from {address}")
+    print(total)
 
-try:
-    while True:
-        try:
-            data, address = server_socket.recvfrom(4096)
-            print(f"Received {len(data)} bytes from {address}")
+    total += 1
+    if data == b"HELLO":
+        non_corrupted += 1
+    else:
+        corruption.append(data)
 
-            if start_time is None:
-                start_time = time.time()
-                continue
+    if total >= 100_000:
+        break
 
-            latency_bytes.append((data, time.time()))
-        except BlockingIOError:
-            pass
-except KeyboardInterrupt:
-    latencies = [struct.unpack("!d", data)[0] - t for data, t in latency_bytes]
-    print(f"Average latency: {sum(latencies) / len(latencies)}")
+print(f"Total packets received: {total}")
+print(f"Non-corrupted packets: {non_corrupted}")
+print(f"Corrupted packets: {len(corruption)}")
+print(f"Corruption Rate: {len(corruption) / total * 100:.2f}%")

@@ -23,7 +23,7 @@ Address = Tuple[str, int]
 @dataclass
 class Settings:
     bandwidth: Provider  # Bytes per second
-    latency: Provider  # milliseconds
+    latency: Provider  # seconds
     packet_loss_rate: Provider  # percentage [0-1]
     packet_corruption_rate: Provider  # percentage [0-1]
 

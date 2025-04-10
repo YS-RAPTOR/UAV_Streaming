@@ -1,7 +1,8 @@
 import socket
 import time
+from collections import deque
 from random import Random
-from typing import List, Tuple
+from typing import Deque, List, Tuple
 from common import ConstantProvider, Settings, Packet, Address
 
 
@@ -25,31 +26,59 @@ class Application:
         self.unsorted_packet_recieve_list: List[Packet] = []
         self.unsorted_packet_send_list: List[Packet] = []
 
+        self.latency_queue: Deque[Packet] = deque()
         self.packet_to_be_sent: Packet | None = None
 
     def run(self):
         while True:
-            while len(self.unsorted_packet_send_list) > 0:
-                try:
-                    packet = self.unsorted_packet_send_list[-1]
-                    self.socket.sendto(packet.data, packet.send_address)
-                    self.unsorted_packet_send_list.pop()
-                except BlockingIOError:
-                    break
-
-            while True:
-                try:
-                    data, address = self.socket.recvfrom(4096)
-                    send_address = (
-                        self.addresses[0]
-                        if address == self.addresses[1]
-                        else self.addresses[1]
-                    )
-                    self.unsorted_packet_recieve_list.append(Packet(data, send_address))
-                except BlockingIOError:
-                    break
-
+            self.send_packets()
+            self.receive_packets()
+            self.add_to_latency_queue()
             self.promote_packet_to_be_sent()
+
+    def send_packets(self):
+        while len(self.unsorted_packet_send_list) > 0:
+            try:
+                packet = self.unsorted_packet_send_list[-1]
+                self.socket.sendto(packet.data, packet.send_address)
+                self.unsorted_packet_send_list.pop()
+            except BlockingIOError:
+                break
+
+    def receive_packets(self):
+        while True:
+            try:
+                data, address = self.socket.recvfrom(4096)
+                send_address = (
+                    self.addresses[0]
+                    if address == self.addresses[1]
+                    else self.addresses[1]
+                )
+                self.unsorted_packet_recieve_list.append(Packet(data, send_address))
+            except BlockingIOError:
+                break
+
+    def add_to_latency_queue(self):
+        while len(self.unsorted_packet_recieve_list) > 0:
+            length_of_packet_list = len(self.unsorted_packet_recieve_list)
+            choice = self.rng.randint(0, length_of_packet_list - 1)
+            if choice == length_of_packet_list - 1:
+                packet = self.unsorted_packet_recieve_list.pop()
+            else:
+                packet = self.unsorted_packet_recieve_list[choice]
+                self.unsorted_packet_recieve_list[choice] = (
+                    self.unsorted_packet_recieve_list[-1]
+                )
+                self.unsorted_packet_recieve_list.pop()
+
+            packet_loss_rate = self.settings.packet_loss_rate.get()
+            rand = self.rng.random()
+
+            if rand < packet_loss_rate:
+                continue
+
+            packet.time = time.time() + self.settings.latency.get()
+            self.latency_queue.appendleft(packet)
 
     def promote_packet_to_be_sent(self):
         # Check if the packet_to_be_sent is set. If not set it.
@@ -65,24 +94,19 @@ class Application:
             else:
                 return
 
-        length_of_packet_list = len(self.unsorted_packet_recieve_list)
-        if length_of_packet_list == 0:
+        if len(self.latency_queue) == 0:
             return
 
-        choice = self.rng.randint(0, length_of_packet_list - 1)
-        if choice == length_of_packet_list - 1:
-            packet = self.unsorted_packet_recieve_list.pop()
-        else:
-            packet = self.unsorted_packet_recieve_list[choice]
-            self.unsorted_packet_recieve_list[choice] = (
-                self.unsorted_packet_recieve_list[-1]
-            )
-            self.unsorted_packet_recieve_list.pop()
+        if (
+            self.latency_queue[-1].time is not None
+            and time.time() >= self.latency_queue[-1].time
+        ):
+            packet = self.latency_queue.pop()
+            packet.time = (
+                len(packet.data) / self.settings.bandwidth.get()
+            ) + time.time()
 
-        packet.time = (len(packet.data) / self.settings.bandwidth.get()) + time.time()
-        print(packet.time, time.time())
-
-        self.packet_to_be_sent = packet
+            self.packet_to_be_sent = packet
 
 
 if __name__ == "__main__":
@@ -92,9 +116,9 @@ if __name__ == "__main__":
         addresses=(("127.0.0.1", 2002), ("127.0.0.1", 2004)),
         rng=main_rng,
         settings=Settings(
-            bandwidth=ConstantProvider(1),
+            bandwidth=ConstantProvider(10_000_000),
             latency=ConstantProvider(0),
-            packet_loss_rate=ConstantProvider(0),
+            packet_loss_rate=ConstantProvider(0.5),
             packet_corruption_rate=ConstantProvider(0),
         ),
     )

@@ -1,4 +1,6 @@
 import socket
+import struct
+from time import time, sleep
 
 client_address = ("127.0.0.1", 2002)
 server_address = ("127.0.0.1", 2004)
@@ -10,5 +12,6 @@ client_socket.bind(client_address)
 client_socket.sendto(b"START", server_address)
 messages = [i for i in range(100_000)]
 
-for message in messages:
-    client_socket.sendto(message.to_bytes(4, "big"), proxy_server_address)
+for _ in range(100_000):
+    client_socket.sendto(struct.pack("!d", time()), proxy_server_address)
+    sleep(0.001)

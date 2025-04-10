@@ -117,8 +117,8 @@ if __name__ == "__main__":
         rng=main_rng,
         settings=Settings(
             bandwidth=ConstantProvider(10_000_000),
-            latency=ConstantProvider(0),
-            packet_loss_rate=ConstantProvider(0.5),
+            latency=ConstantProvider(1),
+            packet_loss_rate=ConstantProvider(0),
             packet_corruption_rate=ConstantProvider(0),
         ),
     )

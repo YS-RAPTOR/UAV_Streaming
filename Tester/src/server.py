@@ -1,5 +1,6 @@
 import socket
 import time
+import struct
 
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_address = ("127.0.0.1", 2004)
@@ -8,12 +9,8 @@ server_socket.setblocking(False)
 
 print(f"Starting listening server on {server_address[0]}:{server_address[1]}")
 
-total_bytes_recieved = 0
 start_time = None
-duration = 0
-messages_recieved = 0
-
-numbers = set()
+latency_bytes = []
 
 
 try:
@@ -26,17 +23,9 @@ try:
                 start_time = time.time()
                 continue
 
-            numbers.add(int.from_bytes(data, "big"))
+            latency_bytes.append((data, time.time()))
         except BlockingIOError:
             pass
 except KeyboardInterrupt:
-    print("Calculating Packet Loss Rate...")
-
-    missing = 0
-    for n in range(100_000):
-        if n not in numbers:
-            missing += 1
-
-    print(f"Missing {missing} packets")
-    print(f"Recieved {len(numbers)} packets")
-    print(f"Packet Loss Rate: {missing / 100_000 * 100}%")
+    latencies = [struct.unpack("!d", data)[0] - t for data, t in latency_bytes]
+    print(f"Average latency: {sum(latencies) / len(latencies)}")

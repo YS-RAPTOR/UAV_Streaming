@@ -1,5 +1,6 @@
-import socket
 import time
+import socket
+from pathlib import Path
 from collections import deque
 from random import Random
 from typing import Deque, List, Literal, Tuple
@@ -151,17 +152,20 @@ Worst
     No of Packet Corruptions: ExpoVariate(2)
 """
 
-Scenario: Literal["Best", "Average", "Worst"] = "Worst"
-Spike_Chance = 0.001
+Scenario: Literal["Best", "Average", "Worst", "Testing"] = "Testing"
+Spike_Chance = 0.005
 Spike_Duration = 10
 Seed = 0
+Run = Path("./Runs/Test-1")
 
 
 if __name__ == "__main__":
     main_rng = Random(Seed)
+    Run.mkdir(parents=True, exist_ok=True)
 
     if Scenario == "Best":
         settings = Settings(
+            folder=Run.joinpath(Scenario),
             bandwidth=RandomGauss(
                 seed=main_rng.randint(0, 10**5),
                 mean=15 * 1024 * 1024,
@@ -178,6 +182,7 @@ if __name__ == "__main__":
         )
     elif Scenario == "Average":
         settings = Settings(
+            folder=Run.joinpath(Scenario),
             bandwidth=RandomGaussWithSpikes(
                 seed=main_rng.randint(0, 10**5),
                 mean=10 * 1024 * 1024,
@@ -218,6 +223,7 @@ if __name__ == "__main__":
         )
     elif Scenario == "Worst":
         settings = Settings(
+            folder=Run.joinpath(Scenario),
             bandwidth=RandomGauss(
                 seed=main_rng.randint(0, 10**5),
                 mean=5 * 1024 * 1024,
@@ -235,6 +241,15 @@ if __name__ == "__main__":
                 lam=2,
                 start_value=1,
             ),
+        )
+    elif Scenario == "Testing":
+        settings = Settings(
+            folder=Run.joinpath(Scenario),
+            bandwidth=ConstantProvider(10**5),
+            latency=ConstantProvider(0),
+            packet_loss_rate=ConstantProvider(0),
+            packet_corruption_rate=ConstantProvider(0),
+            no_of_packet_corruptions=ConstantProvider(0),
         )
     else:
         raise ValueError("Invalid Scenario")

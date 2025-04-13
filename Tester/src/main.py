@@ -2,8 +2,16 @@ import socket
 import time
 from collections import deque
 from random import Random
-from typing import Deque, List, Tuple
-from common import ConstantProvider, RandomExpovariate, Settings, Packet, Address
+from typing import Deque, List, Literal, Tuple
+from common import (
+    ConstantProvider,
+    RandomExpovariate,
+    RandomGauss,
+    RandomGaussWithSpikes,
+    Settings,
+    Packet,
+    Address,
+)
 
 
 class Application:
@@ -126,13 +134,13 @@ Best
     Latency: 10ms +- 5ms
     Packet Loss Rate: 0%
     Packet Corruption Rate: 0%
-    No of Packet Corruptions: ExpoVariate(2)
+    No of Packet Corruptions: 0
 
 Average
-    Bandwidth: 10MB/s +- 2MB/s with spikes for 1 second up to 5MB/s
-    Latency: 60ms +- 10ms with spikes for 1 second up to 100ms
-    Packet Loss Rate: 0% - 5% with spikes for 1 second up to 10%
-    Packet Corruption Rate: 0% - 2% with spikes for 1 second up to 5%
+    Bandwidth: 10MB/s +- 2MB/s with spikes up to 5MB/s
+    Latency: 60ms +- 10ms with spikes up to 90ms
+    Packet Loss Rate: 2.5% +- 2.5% with spikes up to 7.5%
+    Packet Corruption Rate: 1% +- 1% with spikes up to 3%
     No of Packet Corruptions: ExpoVariate(2)
 
 Worst
@@ -143,22 +151,98 @@ Worst
     No of Packet Corruptions: ExpoVariate(2)
 """
 
+Scenario: Literal["Best", "Average", "Worst"] = "Worst"
+Spike_Chance = 0.001
+Spike_Duration = 10
+Seed = 0
+
+
 if __name__ == "__main__":
-    main_rng = Random(0)
-    app = Application(
-        listen_address=("127.0.0.1", 2003),
-        addresses=(("127.0.0.1", 2002), ("127.0.0.1", 2004)),
-        rng=main_rng,
-        settings=Settings(
-            bandwidth=ConstantProvider(10_000_000),
-            latency=ConstantProvider(0),
+    main_rng = Random(Seed)
+
+    if Scenario == "Best":
+        settings = Settings(
+            bandwidth=RandomGauss(
+                seed=main_rng.randint(0, 10**5),
+                mean=15 * 1024 * 1024,
+                stddev=1 * 1024 * 1024,
+            ),
+            latency=RandomGauss(
+                seed=main_rng.randint(0, 10**5),
+                mean=10 / 1000,
+                stddev=2.5 / 1000,
+            ),
             packet_loss_rate=ConstantProvider(0),
-            packet_corruption_rate=ConstantProvider(0.5),
+            packet_corruption_rate=ConstantProvider(0),
+            no_of_packet_corruptions=ConstantProvider(0),
+        )
+    elif Scenario == "Average":
+        settings = Settings(
+            bandwidth=RandomGaussWithSpikes(
+                seed=main_rng.randint(0, 10**5),
+                mean=10 * 1024 * 1024,
+                stddev=1 * 1024 * 1024,
+                spike_multiplier=0.5,
+                spike_chance=Spike_Chance,
+                max_spike_duration=Spike_Duration,
+            ),
+            latency=RandomGaussWithSpikes(
+                seed=main_rng.randint(0, 10**5),
+                mean=60 / 1000,
+                stddev=5 / 1000,
+                spike_multiplier=1.5,
+                spike_chance=Spike_Chance,
+                max_spike_duration=Spike_Duration,
+            ),
+            packet_loss_rate=RandomGaussWithSpikes(
+                seed=main_rng.randint(0, 10**5),
+                mean=2.5 / 100,
+                stddev=1.25 / 100,
+                spike_multiplier=3,
+                spike_chance=Spike_Chance,
+                max_spike_duration=Spike_Duration,
+            ),
+            packet_corruption_rate=RandomGaussWithSpikes(
+                seed=main_rng.randint(0, 10**5),
+                mean=1 / 100,
+                stddev=0.5 / 100,
+                spike_multiplier=3,
+                spike_chance=Spike_Chance,
+                max_spike_duration=Spike_Duration,
+            ),
             no_of_packet_corruptions=RandomExpovariate(
                 seed=main_rng.randint(0, 10**5),
                 lam=2,
                 start_value=1,
             ),
-        ),
+        )
+    elif Scenario == "Worst":
+        settings = Settings(
+            bandwidth=RandomGauss(
+                seed=main_rng.randint(0, 10**5),
+                mean=5 * 1024 * 1024,
+                stddev=1 * 1024 * 1024,
+            ),
+            latency=RandomGauss(
+                seed=main_rng.randint(0, 10**5),
+                mean=100 / 1000,
+                stddev=10 / 1000,
+            ),
+            packet_loss_rate=ConstantProvider(10 / 100),
+            packet_corruption_rate=ConstantProvider(5 / 100),
+            no_of_packet_corruptions=RandomExpovariate(
+                seed=main_rng.randint(0, 10**5),
+                lam=2,
+                start_value=1,
+            ),
+        )
+    else:
+        raise ValueError("Invalid Scenario")
+
+    app = Application(
+        listen_address=("127.0.0.1", 2003),
+        addresses=(("127.0.0.1", 2002), ("127.0.0.1", 2004)),
+        rng=main_rng,
+        settings=settings,
     )
     app.run()

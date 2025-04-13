@@ -18,13 +18,13 @@ import matplotlib  # type: ignore
 
 matplotlib.use("QtAgg")
 
-GET_INT = True
+GET_INT = False
 DISTRIBUTION = True
 TIME = True
 
 NO_OF_SAMPLES = 10_000
 
-provider: common.Provider = common.RandomExpovariate(0, 2, 1)
+provider: common.Provider = common.RandomGaussWithSpikes(0, 60, 5, 0.005, 10, 2)
 data = []
 
 alpha = 2
@@ -59,7 +59,7 @@ if TIME:
 
 if DISTRIBUTION:
     plt.figure()
-    plt.hist(data, bins=100, density=True)
+    plt.hist(data, bins=200, density=True)
     plt.title("Histogram")
 
 if TIME or DISTRIBUTION:

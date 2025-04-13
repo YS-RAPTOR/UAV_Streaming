@@ -39,6 +39,55 @@ class RandomExpovariate(Provider):
         return math.floor(self.get())
 
 
+class RandomGauss(Provider):
+    def __init__(self, seed: int, mean: float, stddev: float):
+        self.rng = Random(seed)
+        self.mean = mean
+        self.stddev = stddev
+
+    def get(self) -> float:
+        return max(self.rng.gauss(self.mean, self.stddev), 0)
+
+    def get_int(self) -> int:
+        return round(self.get())
+
+
+class RandomGaussWithSpikes(Provider):
+    def __init__(
+        self,
+        seed: int,
+        mean: float,
+        stddev: float,
+        spike_chance: float,
+        max_spike_duration: int,
+        spike_multiplier: float,
+    ):
+        self.rng = Random(seed)
+        self.mean = mean
+        self.stddev = stddev
+
+        self.spike_chance = spike_chance
+        self.max_spike_duration = max_spike_duration
+        self.spike_multiplier = spike_multiplier
+        self.spike_time = 0
+
+    def get(self) -> float:
+        if self.rng.random() < self.spike_chance:
+            self.spike_time += self.rng.randint(1, self.max_spike_duration)
+
+        if self.spike_time > 0:
+            self.spike_time -= 1
+            return max(
+                self.rng.gauss(self.mean, self.stddev) * self.spike_multiplier,
+                0,
+            )
+
+        return max(self.rng.gauss(self.mean, self.stddev), 0)
+
+    def get_int(self) -> int:
+        return round(self.get())
+
+
 Address = Tuple[str, int]
 
 

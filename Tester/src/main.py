@@ -129,8 +129,8 @@ Best
     No of Packet Corruptions: ExpoVariate(2)
 
 Average
-    Bandwidth: 10MB/s +- 2MB/s
-    Latency: 60ms +- 10ms 
+    Bandwidth: 10MB/s +- 2MB/s with spikes for 1 second up to 5MB/s
+    Latency: 60ms +- 10ms with spikes for 1 second up to 100ms
     Packet Loss Rate: 0% - 5% with spikes for 1 second up to 10%
     Packet Corruption Rate: 0% - 2% with spikes for 1 second up to 5%
     No of Packet Corruptions: ExpoVariate(2)

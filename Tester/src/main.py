@@ -3,7 +3,7 @@ import time
 from collections import deque
 from random import Random
 from typing import Deque, List, Tuple
-from common import ConstantProvider, Settings, Packet, Address
+from common import ConstantProvider, RandomExpovariate, Settings, Packet, Address
 
 
 class Application:
@@ -47,10 +47,8 @@ class Application:
                 packet = self.unsorted_packet_send_list[-1]
                 corruption_rate = self.settings.packet_corruption_rate.get()
                 if self.rng.random() < corruption_rate:
-                    if self.rng.random() < self.settings.double_corruption:
-                        self.corrupt_data(packet)
-                        self.corrupt_data(packet)
-                    else:
+                    no_of_corruptions = self.settings.no_of_packet_corruptions.get_int()
+                    for _ in range(no_of_corruptions):
                         self.corrupt_data(packet)
 
                 self.socket.sendto(packet.data, packet.send_address)
@@ -89,8 +87,8 @@ class Application:
 
             if rand < packet_loss_rate:
                 continue
-
             packet.time = time.time() + self.settings.latency.get()
+
             self.latency_queue.appendleft(packet)
 
     def promote_packet_to_be_sent(self):
@@ -122,6 +120,29 @@ class Application:
             self.packet_to_be_sent = packet
 
 
+"""
+Best
+    Bandwidth: 15MB/s +- 2MB/s
+    Latency: 10ms +- 5ms
+    Packet Loss Rate: 0%
+    Packet Corruption Rate: 0%
+    No of Packet Corruptions: ExpoVariate(2)
+
+Average
+    Bandwidth: 10MB/s +- 2MB/s
+    Latency: 60ms +- 10ms 
+    Packet Loss Rate: 0% - 5% with spikes for 1 second up to 10%
+    Packet Corruption Rate: 0% - 2% with spikes for 1 second up to 5%
+    No of Packet Corruptions: ExpoVariate(2)
+
+Worst
+    Bandwidth: 5MB/s +- 2MB/s
+    Latency: 100ms +- 20ms
+    Packet Loss Rate: 10% 
+    Packet Corruption Rate: 5%
+    No of Packet Corruptions: ExpoVariate(2)
+"""
+
 if __name__ == "__main__":
     main_rng = Random(0)
     app = Application(
@@ -133,7 +154,11 @@ if __name__ == "__main__":
             latency=ConstantProvider(0),
             packet_loss_rate=ConstantProvider(0),
             packet_corruption_rate=ConstantProvider(0.5),
-            double_corruption=0.1,
+            no_of_packet_corruptions=RandomExpovariate(
+                seed=main_rng.randint(0, 10**5),
+                lam=2,
+                start_value=1,
+            ),
         ),
     )
     app.run()

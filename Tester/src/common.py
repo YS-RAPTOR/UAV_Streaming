@@ -126,7 +126,12 @@ class Settings:
         )
         self.write()
 
-    def update(self):
+    def update(self, started: bool):
+        if not started:
+            self.last_update = time()
+            self.start_time = time()
+            return
+
         if time() - self.last_update > self.update_every:
             self.last_update = time()
             self.bandwidth = self.bandiwdth_provider.get()

@@ -38,16 +38,18 @@ class Application:
         self.latency_queue: Deque[Packet] = deque()
         self.packet_to_be_sent: Packet | None = None
 
+        self.started = False
+
     def run(self):
         while True:
             self.send_packets()
-            self.settings.update()
+            self.settings.update(self.started)
             self.receive_packets()
-            self.settings.update()
+            self.settings.update(self.started)
             self.add_to_latency_queue()
-            self.settings.update()
+            self.settings.update(self.started)
             self.promote_packet_to_be_sent()
-            self.settings.update()
+            self.settings.update(self.started)
 
     def corrupt_data(self, packet: Packet):
         i = self.rng.randint(0, len(packet.data) - 1)
@@ -73,6 +75,7 @@ class Application:
         while True:
             try:
                 data, address = self.socket.recvfrom(4096)
+                self.started = True
 
                 if address not in self.addresses:
                     self.addresses.append(address)
@@ -158,12 +161,17 @@ Worst
     No of Packet Corruptions: ExpoVariate(2)
 """
 
-Scenario: Literal["Best", "Average", "Worst", "Testing"] = "Testing"
+Scenario: Literal["Best", "Average", "Worst", "Testing"] = "Worst"
 Spike_Chance = 0.005
 Spike_Duration = 10
 Seed = 0
 Update_Every = 0.5
-Run = Path("./Runs/Test")
+Project_Name = "Test"
+
+if Project_Name == "Test":
+    Run = Path(f"./Runs/Test-{time.time_ns()}")
+else:
+    Run = Path(f"./Runs/{Project_Name}")
 
 
 if __name__ == "__main__":
@@ -265,6 +273,7 @@ if __name__ == "__main__":
     else:
         raise ValueError("Invalid Scenario")
 
+    print("Running Scenario:", Scenario)
     app = Application(
         listen_address=("127.0.0.1", 2003),
         addresses=[("127.0.0.1", 2004)],

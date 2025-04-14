@@ -13,7 +13,7 @@ if /i "%PROTO%"=="udp" (
     ffplay "udp://127.0.0.1:%PORT%"
     exit /b
 ) else if /i "%PROTO%"=="rtp" (
-    ffplay "rtp://127.0.0.1:%PORT%"
+    ffplay -protocol_whitelist file,udp,rtp -i stream.sdp
     exit /b
 ) else if /i "%PROTO%"=="srt" (
     ffplay "srt://127.0.0.1:%PORT%?mode=listener"

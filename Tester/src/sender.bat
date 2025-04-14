@@ -1,4 +1,4 @@
-REM @echo off
+@echo off
 REM Usage: sender.bat [udp|rtp|srt]
 
 set PROTO=%1
@@ -20,6 +20,7 @@ if /i "%PROTO%"=="udp" (
     ffmpeg %INPUT% -f mpegts "udp://%TARGET_IP%:%PORT%"
     exit /b
 ) else if /i "%PROTO%"=="rtp" (
+
     ffmpeg %INPUT% -f rtp "rtp://%TARGET_IP%:%PORT%"
     exit /b
 ) else if /i "%PROTO%"=="srt" (

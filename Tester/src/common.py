@@ -90,37 +90,11 @@ class RandomGaussWithSpikes(Provider):
         return round(self.get())
 
 
-class LoggingProvider(Provider):
-    def __init__(
-        self,
-        provider: Provider,
-        start_time: float,
-        log_file: TextIO,
-    ):
-        self.start_time = start_time
-        self.provider = provider
-        self.log_file = log_file
-
-    def get(self) -> float:
-        value = self.provider.get()
-        time_passed = time() - self.start_time
-        self.log_file.write(f"{time_passed},{value}\n")
-        return value
-
-    def get_int(self) -> int:
-        value = self.provider.get_int()
-        time_passed = time() - self.start_time
-        self.log_file.write(f"{time_passed},{value}\n")
-        return value
-
-    def close(self):
-        self.log_file.close()
-
-
 class Settings:
     def __init__(
         self,
         folder: Path,
+        update_every: float,
         bandwidth: Provider,
         latency: Provider,
         packet_loss_rate: Provider,
@@ -131,34 +105,43 @@ class Settings:
             raise Exception("The Scenario folder already exists")
         folder.mkdir()
 
-        start_time = time()
-        self.bandwidth: LoggingProvider = LoggingProvider(
-            bandwidth,
-            start_time,
-            open(folder.joinpath("bandwidth.csv"), "w"),
-        )
-        self.latency: LoggingProvider = LoggingProvider(
-            latency,
-            start_time,
-            open(folder.joinpath("latency.csv"), "w"),
-        )
-        self.packet_loss_rate: LoggingProvider = LoggingProvider(
-            packet_loss_rate,
-            start_time,
-            open(folder.joinpath("packet_loss_rate.csv"), "w"),
-        )
-        self.packet_corruption_rate: LoggingProvider = LoggingProvider(
-            packet_corruption_rate,
-            start_time,
-            open(folder.joinpath("packet_corruption_rate.csv"), "w"),
-        )
+        self.start_time = time()
+        self.update_every = update_every
+        self.last_update = self.start_time
+        self.file = open(folder.joinpath("data.csv"), "w")
+
+        self.bandiwdth_provider = bandwidth
+        self.latency_provider = latency
+        self.packet_loss_rate_provider = packet_loss_rate
+        self.packet_corruption_rate_provider = packet_corruption_rate
         self.no_of_packet_corruptions = no_of_packet_corruptions
 
+        self.bandwidth = bandwidth.get()
+        self.latency = latency.get()
+        self.packet_loss_rate = packet_loss_rate.get()
+        self.packet_corruption_rate = packet_corruption_rate.get()
+
+        self.file.write(
+            "time,bandwidth,latency,packet_loss_rate,packet_corruption_rate\n"
+        )
+        self.write()
+
+    def update(self):
+        if time() - self.last_update > self.update_every:
+            self.last_update = time()
+            self.bandwidth = self.bandiwdth_provider.get()
+            self.latency = self.latency_provider.get()
+            self.packet_loss_rate = self.packet_loss_rate_provider.get()
+            self.packet_corruption_rate = self.packet_corruption_rate_provider.get()
+            self.write()
+
+    def write(self):
+        self.file.write(
+            f"{self.last_update - self.start_time},{self.bandwidth},{self.latency},{self.packet_loss_rate},{self.packet_corruption_rate}\n"
+        )
+
     def close(self):
-        self.bandwidth.close()
-        self.latency.close()
-        self.packet_loss_rate.close()
-        self.packet_corruption_rate.close()
+        self.file.close()
 
 
 Address = Tuple[str, int]

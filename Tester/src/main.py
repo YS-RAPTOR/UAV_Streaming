@@ -41,9 +41,13 @@ class Application:
     def run(self):
         while True:
             self.send_packets()
+            self.settings.update()
             self.receive_packets()
+            self.settings.update()
             self.add_to_latency_queue()
+            self.settings.update()
             self.promote_packet_to_be_sent()
+            self.settings.update()
 
     def corrupt_data(self, packet: Packet):
         i = self.rng.randint(0, len(packet.data) - 1)
@@ -54,7 +58,7 @@ class Application:
         while len(self.unsorted_packet_send_list) > 0:
             try:
                 packet = self.unsorted_packet_send_list[-1]
-                corruption_rate = self.settings.packet_corruption_rate.get()
+                corruption_rate = self.settings.packet_corruption_rate
                 if self.rng.random() < corruption_rate:
                     no_of_corruptions = self.settings.no_of_packet_corruptions.get_int()
                     for _ in range(no_of_corruptions):
@@ -91,12 +95,12 @@ class Application:
                 )
                 self.unsorted_packet_recieve_list.pop()
 
-            packet_loss_rate = self.settings.packet_loss_rate.get()
+            packet_loss_rate = self.settings.packet_loss_rate
             rand = self.rng.random()
 
             if rand < packet_loss_rate:
                 continue
-            packet.time = time.time() + self.settings.latency.get()
+            packet.time = time.time() + self.settings.latency
 
             self.latency_queue.appendleft(packet)
 
@@ -122,9 +126,7 @@ class Application:
             and time.time() >= self.latency_queue[-1].time
         ):
             packet = self.latency_queue.pop()
-            packet.time = (
-                len(packet.data) / self.settings.bandwidth.get()
-            ) + time.time()
+            packet.time = (len(packet.data) / self.settings.bandwidth) + time.time()
 
             self.packet_to_be_sent = packet
 
@@ -156,7 +158,8 @@ Scenario: Literal["Best", "Average", "Worst", "Testing"] = "Testing"
 Spike_Chance = 0.005
 Spike_Duration = 10
 Seed = 0
-Run = Path("./Runs/Test-1")
+Update_Every = 0.5
+Run = Path("./Runs/Test")
 
 
 if __name__ == "__main__":
@@ -166,6 +169,7 @@ if __name__ == "__main__":
     if Scenario == "Best":
         settings = Settings(
             folder=Run.joinpath(Scenario),
+            update_every=Update_Every,
             bandwidth=RandomGauss(
                 seed=main_rng.randint(0, 10**5),
                 mean=15 * 1024 * 1024,
@@ -183,6 +187,7 @@ if __name__ == "__main__":
     elif Scenario == "Average":
         settings = Settings(
             folder=Run.joinpath(Scenario),
+            update_every=Update_Every,
             bandwidth=RandomGaussWithSpikes(
                 seed=main_rng.randint(0, 10**5),
                 mean=10 * 1024 * 1024,
@@ -224,6 +229,7 @@ if __name__ == "__main__":
     elif Scenario == "Worst":
         settings = Settings(
             folder=Run.joinpath(Scenario),
+            update_every=Update_Every,
             bandwidth=RandomGauss(
                 seed=main_rng.randint(0, 10**5),
                 mean=5 * 1024 * 1024,
@@ -245,6 +251,7 @@ if __name__ == "__main__":
     elif Scenario == "Testing":
         settings = Settings(
             folder=Run.joinpath(Scenario),
+            update_every=Update_Every,
             bandwidth=ConstantProvider(10**5),
             latency=ConstantProvider(0),
             packet_loss_rate=ConstantProvider(0),
@@ -261,3 +268,4 @@ if __name__ == "__main__":
         settings=settings,
     )
     app.run()
+    settings.close()

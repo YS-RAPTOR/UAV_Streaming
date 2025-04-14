@@ -19,7 +19,7 @@ class Application:
     def __init__(
         self,
         listen_address: Address,
-        addresses: Tuple[Address, Address],
+        addresses: List[Address],
         rng: Random,
         settings: Settings,
     ):
@@ -73,6 +73,10 @@ class Application:
         while True:
             try:
                 data, address = self.socket.recvfrom(4096)
+
+                if address not in self.addresses:
+                    self.addresses.append(address)
+
                 send_address = (
                     self.addresses[0]
                     if address == self.addresses[1]
@@ -263,7 +267,7 @@ if __name__ == "__main__":
 
     app = Application(
         listen_address=("127.0.0.1", 2003),
-        addresses=(("127.0.0.1", 2002), ("127.0.0.1", 2004)),
+        addresses=[("127.0.0.1", 2004)],
         rng=main_rng,
         settings=settings,
     )

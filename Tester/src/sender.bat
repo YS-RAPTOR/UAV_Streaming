@@ -12,9 +12,8 @@ if "%PROTO%"=="" (
 
 REM Set input options
 set FONT="C\\:/Windows/Fonts/arial.ttf"
-set TIME="Time\\: %%{localtime} (%%{pts\\:hms})"
-set FRAME="Frame\\: %%{n}"
-set INPUT=-re -f lavfi -i testsrc=rate=60:size=1920x1080 -vf drawtext=fontfile=%FONT%:text=%TIME%:fontsize=48:fontcolor=white:x=10:y=10,drawtext=fontfile=%FONT%:text=%FRAME%:fontsize=48:fontcolor=white:x=10:y=100
+set TEXT="Time\\: %%{localtime} (%%{pts\\:hms}) Frame\\: %%{n}"
+set INPUT=-re -f lavfi -i testsrc=rate=60:size=1920x1080 -vf drawtext=fontfile=%FONT%:text=%TEXT%:fontsize=48:fontcolor=white:x=10:y=10:box=1:boxcolor=black
 
 if /i "%PROTO%"=="udp" (
     ffmpeg %INPUT% -f mpegts "udp://%TARGET_IP%:%PORT%"

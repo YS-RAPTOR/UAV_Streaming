@@ -6,7 +6,7 @@ set TARGET_IP=127.0.0.1
 set PORT=2003
 
 if "%PROTO%"=="" (
-    echo Usage: %~nx0 [udp^|rtp^|srt]
+    echo Usage: %~nx0 [udp^|rtp^|srt^|rist]
     exit /b 1
 )
 
@@ -19,11 +19,13 @@ if /i "%PROTO%"=="udp" (
     ffmpeg %INPUT% -f mpegts "udp://%TARGET_IP%:%PORT%"
     exit /b
 ) else if /i "%PROTO%"=="rtp" (
-
     ffmpeg %INPUT% -f rtp "rtp://%TARGET_IP%:%PORT%"
     exit /b
 ) else if /i "%PROTO%"=="srt" (
     ffmpeg %INPUT% -f mpegts "srt://%TARGET_IP%:%PORT%"
+    exit /b
+) else if /i "%PROTO%"=="rist" (
+    ffmpeg %INPUT% -f mpegts "rist://%TARGET_IP%:%PORT%"
     exit /b
 ) else (
     echo Unsupported protocol: %PROTO%

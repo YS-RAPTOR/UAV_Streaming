@@ -5,7 +5,7 @@ set PROTO=%1
 set PORT=2004
 
 if "%PROTO%"=="" (
-    echo Usage: %~nx0 [udp^|rtp^|srt]
+    echo Usage: %~nx0 [udp^|rtp^|srt^|rist]
     exit /b 1
 )
 
@@ -17,6 +17,9 @@ if /i "%PROTO%"=="udp" (
     exit /b
 ) else if /i "%PROTO%"=="srt" (
     ffplay "srt://127.0.0.1:%PORT%?mode=listener"
+    exit /b
+) else if /i "%PROTO%"=="rist" (
+    ffplay "rist://@:%PORT%"
     exit /b
 ) else (
     echo Unsupported protocol: %PROTO%

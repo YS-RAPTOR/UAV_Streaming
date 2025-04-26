@@ -14,37 +14,12 @@
 
 # Comparisons
 
-## RTMP
-
-- Based on TCP/IP
-
-## RTSP
-
-- Based on RTP (Runs over UDP)
-
-## SRT
-
-- Based on UDP
-
-## WebRTC
-
-- Based on RTP (Runs over UDP)
-
-## MPEG-DASH
-
-- Based on UDP
-
-## HLS
-
-- HTTP based (Runs over TCP/IP)
-
-## LL-HLS
-
-- HTTP based (Runs over TCP/IP)
-
-# Front Runners
-
 - UDP
 - RTP
-- RTSP
 - SRT
+
+# Assumptions Made
+
+- Have access to both video streamer and receiver when starting the service
+  - Can share encryption keys: Does not require a handshake
+  - Time synchronization: Does not require a handshake

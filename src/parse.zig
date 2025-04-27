@@ -48,7 +48,10 @@ fn parseArgument(Argument: type, optional_value: ?[]const u8) !Argument {
             return error.InvalidEnumValue;
         },
         .pointer => |p| {
-            _ = p;
+            if (p.size != .one and p.child == u8) {
+                return value;
+            }
+
             @compileError("Pointer types are not supported");
         },
         else => {

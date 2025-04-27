@@ -9,12 +9,14 @@ const SenderArguments = struct {
     resolution: common.Resolution,
     frame_rate: common.FrameRate,
     source: source.SourceType,
+    device: []const u8,
 
     pub const default: SenderArguments = .{
         .resolution = .@"2160p",
         .frame_rate = .@"60",
         // TODO: Change to Camera after testing
         .source = .Test,
+        .device = "",
     };
 };
 
@@ -26,7 +28,7 @@ const help =
     \\      60, 48, 30, 24
     \\-s, --source [src]         Set the source type (default: Camera)
     \\      Camera, Test
-    \\
+    \\-d, --device [device]      Set the camera device name (default: /dev/video0)
 ;
 
 pub fn main() !void {

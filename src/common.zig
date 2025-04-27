@@ -1,4 +1,5 @@
 const ffmpeg = @import("ffmpeg");
+const std = @import("std");
 
 pub const Resolution = enum(u16) {
     @"360p" = 360,
@@ -39,7 +40,45 @@ pub const FrameRate = enum(u8) {
 };
 
 // Taken from https://support.google.com/youtube/answer/2853702?hl=en#zippy=%2Ck-p-fps%2Cp-fps%2Cp
-pub fn getBitRate(resolution: Resolution, frame_rate: FrameRate) u32 {}
+pub fn getMegaBitRate(resolution: Resolution, frame_rate: FrameRate) u32 {
+    switch (resolution) {
+        .@"2160p" => {
+            switch (frame_rate) {
+                .@"24" => return 29,
+                .@"30" => return 30,
+                .@"48" => return 33,
+                .@"60" => return 35,
+            }
+        },
+        .@"1440p" => {
+            switch (frame_rate) {
+                .@"24" => return 14,
+                .@"30" => return 15,
+                .@"48" => return 21,
+                .@"60" => return 24,
+            }
+        },
+        .@"1080p" => {
+            switch (frame_rate) {
+                .@"24" => return 9,
+                .@"30" => return 10,
+                .@"48" => return 11,
+                .@"60" => return 12,
+            }
+        },
+        .@"720p" => {
+            switch (frame_rate) {
+                .@"24" => return 4,
+                .@"30" => return 4,
+                .@"48" => return 5,
+                .@"60" => return 6,
+            }
+        },
+        else => {
+            return 4;
+        },
+    }
+}
 
 pub const Frame = struct {
     frame: *ffmpeg.AVFrame,
@@ -47,6 +86,7 @@ pub const Frame = struct {
 
     pub inline fn init() !@This() {
         const frame = ffmpeg.av_frame_alloc();
+
         if (frame == null) {
             return error.CouldNotAllocateFrame;
         }
@@ -57,7 +97,11 @@ pub const Frame = struct {
         };
     }
 
-    pub inline fn start(self: @This()) !*ffmpeg.AVFrame {
+    pub inline fn deinit(self: *@This()) void {
+        ffmpeg.av_frame_free(@ptrCast(&self.frame));
+    }
+
+    pub inline fn start(self: *@This()) !*ffmpeg.AVFrame {
         if (self.unref) {
             self.unref = false;
             return self.frame;
@@ -65,10 +109,12 @@ pub const Frame = struct {
         return error.EndFrameBeforeStartingNewFrame;
     }
 
-    pub inline fn end(self: @This()) void {
+    pub inline fn end(self: *@This()) void {
         if (self.unref) {
-            return error.EndingAlreadyEndedFrame;
+            std.debug.print("Unref called on already unrefed packet\n", .{});
+            @trap();
         }
+        ffmpeg.av_frame_unref(self.frame);
         self.unref = true;
     }
 };
@@ -89,18 +135,23 @@ pub const Packet = struct {
         };
     }
 
-    pub inline fn start(self: @This()) !*ffmpeg.AVPacket {
+    pub inline fn deinit(self: *@This()) void {
+        ffmpeg.av_packet_free(@ptrCast(&self.packet));
+    }
+
+    pub inline fn start(self: *@This()) !*ffmpeg.AVPacket {
         if (self.unref) {
             self.unref = false;
-            return self.packet;
         }
         return error.EndpacketBeforeStartingNewpacket;
     }
 
-    pub inline fn end(self: @This()) void {
+    pub inline fn end(self: *@This()) void {
         if (self.unref) {
-            return error.EndingAlreadyEndedpacket;
+            std.debug.print("Unref called on already unrefed packet\n", .{});
+            @trap();
         }
+        ffmpeg.av_packet_unref(self.packet);
         self.unref = true;
     }
 };

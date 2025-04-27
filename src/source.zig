@@ -11,7 +11,7 @@ pub const Source = union(SourceType) {
     Test: TestSource,
     Camera: CameraSource,
 
-    pub fn init(
+    pub inline fn init(
         source_type: SourceType,
         max_resolution: common.Resolution,
         max_frame_rate: common.FrameRate,
@@ -22,7 +22,7 @@ pub const Source = union(SourceType) {
         }
     }
 
-    pub fn deinit(self: *@This()) void {
+    pub inline fn deinit(self: *@This()) void {
         switch (self.*) {
             inline else => |*source| {
                 source.deinit();
@@ -30,7 +30,7 @@ pub const Source = union(SourceType) {
         }
     }
 
-    pub fn fillFrame(self: *@This(), frame: common.Frame) !bool {
+    pub inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !bool {
         switch (self.*) {
             inline else => |*source| {
                 return source.fillFrame(frame);
@@ -59,6 +59,7 @@ const TestSource = struct {
                 "text='Time - %{{localtime}} (%{{pts\\:hms}}) Frame \\: %{{n}}':" ++
                 "fontsize=48:fontcolor=white:x=10:y=10:" ++
                 "box=1:boxcolor=black," ++
+                "format=pix_fmts=yuv420p," ++
                 "nullsink",
             .{ max_resolution.getResolutionString(), @tagName(max_frame_rate) },
         );
@@ -104,7 +105,7 @@ const TestSource = struct {
             return error.CouldNotGetSourceFilter;
         }
 
-        const sink = ffmpeg.avfilter_graph_get_filter(filter_graph, "Parsed_drawtext_1");
+        const sink = ffmpeg.avfilter_graph_get_filter(filter_graph, "Parsed_format_2");
         if (sink == null) {
             return error.CouldNotGetSinkFilter;
         }
@@ -116,9 +117,9 @@ const TestSource = struct {
         };
     }
 
-    fn fillFrame(self: *@This(), frame: common.Frame) !bool {
-        const ret = ffmpeg.av_buffersink_get_frame(self.sink, try frame.start());
-        if (ret == ffmpeg.AVERROR(ret) or ret == ffmpeg.AVERROR_EOF) {
+    inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !bool {
+        const ret = ffmpeg.av_buffersink_get_frame(self.sink, frame);
+        if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or ret == ffmpeg.AVERROR_EOF) {
             return false;
         } else if (ret < 0) {
             return error.CouldNotGetFrame;
@@ -126,7 +127,7 @@ const TestSource = struct {
         return true;
     }
 
-    fn deinit(self: *@This()) void {
+    inline fn deinit(self: *@This()) void {
         ffmpeg.avfilter_graph_free(@ptrCast(&self.filter));
     }
 };
@@ -137,6 +138,11 @@ const CameraSource = struct {
         _ = max_frame_rate;
 
         return error.Cringe;
+    }
+    inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !bool {
+        _ = frame;
+        _ = self;
+        return true;
     }
 
     fn deinit(self: *@This()) void {

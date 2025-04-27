@@ -3,6 +3,7 @@ const common = @import("common.zig");
 const source = @import("source.zig");
 const parse = @import("parse.zig");
 const encoder = @import("encoder.zig");
+const mp4 = @import("mp4.zig");
 
 const SenderArguments = struct {
     resolution: common.Resolution,
@@ -57,11 +58,16 @@ pub fn main() !void {
     );
     defer enc.deinit();
 
+    var file = try mp4.MP4.init("output.mp4", enc.context);
+    defer file.deinit();
+
     var frame = try common.Frame.init();
     defer frame.deinit();
 
     var packet = try common.Packet.init();
     defer packet.deinit();
+
+    var count: u16 = 0;
 
     while (true) {
         const f = try frame.start();
@@ -74,7 +80,16 @@ pub fn main() !void {
         var packet_iter = try enc.getPackets(f, packet);
 
         while (try packet_iter.next()) |pkt| {
-            std.debug.print("Packet size: {}\n", .{pkt.*.size});
+            file.write(pkt) catch |err| {
+                std.debug.print("Error writing packet: {}\n", .{err});
+                return err;
+            };
+        }
+
+        count += 1;
+
+        if (count > 1000) {
+            break;
         }
     }
 }

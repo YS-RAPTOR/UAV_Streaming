@@ -142,6 +142,7 @@ pub const Packet = struct {
     pub inline fn start(self: *@This()) !*ffmpeg.AVPacket {
         if (self.unref) {
             self.unref = false;
+            return self.packet;
         }
         return error.EndpacketBeforeStartingNewpacket;
     }

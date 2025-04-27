@@ -96,7 +96,6 @@ pub const H264Codec = struct {
         pub inline fn next(self: *@This()) !?*ffmpeg.AVPacket {
             if (self.start) {
                 @branchHint(.unlikely);
-                std.debug.print("Unrefing packet\n", .{});
                 self.packet.end();
             }
             self.start = true;

@@ -1,21 +1,18 @@
 const std = @import("std");
 const common = @import("common.zig");
+const source = @import("source.zig");
 const parse = @import("parse.zig");
-
-const SourceType = enum {
-    Test,
-    Camera,
-};
 
 const SenderArguments = struct {
     resolution: common.Resolution,
     frame_rate: common.FrameRate,
-    source: SourceType,
+    source: source.SourceType,
 
     pub const default: SenderArguments = .{
         .resolution = .@"2160p",
         .frame_rate = .@"60",
-        .source = SourceType.Test,
+        // TODO: Change to Camera after testing
+        .source = .Test,
     };
 };
 
@@ -46,9 +43,12 @@ pub fn main() !void {
         return;
     };
 
-    std.debug.print("Resolution: {}\n", .{arguements.resolution});
-    std.debug.print("Frame Rate: {}\n", .{arguements.frame_rate});
-    std.debug.print("Source: {}\n", .{arguements.source});
+    var src = try source.Source.init(
+        arguements.source,
+        arguements.resolution,
+        arguements.frame_rate,
+    );
+    defer src.deinit();
 }
 
 test "First" {

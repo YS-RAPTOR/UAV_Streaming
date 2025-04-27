@@ -1,11 +1,30 @@
 const std = @import("std");
 
-fn create(b: *std.Build, comptime name: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
+const Dependency = struct {
+    name: []const u8,
+    module: *std.Build.Module,
+    system_libs: []const []const u8,
+};
+
+fn create(
+    b: *std.Build,
+    comptime name: []const u8,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    dependencies: []const Dependency,
+) *std.Build.Step.Compile {
     const module = b.createModule(.{
         .root_source_file = b.path("src/" ++ name ++ ".zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    for (dependencies) |dep| {
+        module.addImport(dep.name, dep.module);
+        for (dep.system_libs) |lib| {
+            module.linkSystemLibrary(lib, .{});
+        }
+    }
 
     const exe = b.addExecutable(.{
         .name = name,
@@ -38,10 +57,52 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const client = create(b, "receiver", target, optimize);
-    const server = create(b, "sender", target, optimize);
+    const ffmpeg = b.addTranslateC(.{
+        .root_source_file = b.path("src/ffmpeg.h"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }).createModule();
+
+    const sdl = b.addTranslateC(.{
+        .root_source_file = b.path("src/sdl.h"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }).createModule();
+
+    const ffmpeg_dep = Dependency{
+        .name = "ffmpeg",
+        .module = ffmpeg,
+        .system_libs = &[_][]const u8{ "avutil", "avformat", "avcodec", "avfilter" },
+    };
+
+    const receiver = create(
+        b,
+        "receiver",
+        target,
+        optimize,
+        &[_]Dependency{
+            ffmpeg_dep,
+            .{
+                .name = "sdl",
+                .module = sdl,
+                .system_libs = &[_][]const u8{"SDL3"},
+            },
+        },
+    );
+
+    const sender = create(
+        b,
+        "sender",
+        target,
+        optimize,
+        &[_]Dependency{
+            ffmpeg_dep,
+        },
+    );
 
     const check = b.step("check", "Check if they compile");
-    check.dependOn(&client.step);
-    check.dependOn(&server.step);
+    check.dependOn(&receiver.step);
+    check.dependOn(&sender.step);
 }

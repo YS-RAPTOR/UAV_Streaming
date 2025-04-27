@@ -111,8 +111,8 @@ pub const Frame = struct {
 
     pub inline fn end(self: *@This()) void {
         if (self.unref) {
-            std.debug.print("Unref called on already unrefed packet\n", .{});
-            @trap();
+            std.debug.print("Unref called on already unrefed frame\n", .{});
+            unreachable;
         }
         ffmpeg.av_frame_unref(self.frame);
         self.unref = true;
@@ -149,7 +149,7 @@ pub const Packet = struct {
     pub inline fn end(self: *@This()) void {
         if (self.unref) {
             std.debug.print("Unref called on already unrefed packet\n", .{});
-            @trap();
+            unreachable;
         }
         ffmpeg.av_packet_unref(self.packet);
         self.unref = true;

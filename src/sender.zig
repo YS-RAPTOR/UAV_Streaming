@@ -50,35 +50,26 @@ pub fn main() !void {
         arguements.frame_rate,
     );
     defer src.deinit();
-    errdefer src.deinit();
 
     var enc = try encoder.H264Codec.init(
         arguements.resolution,
         arguements.frame_rate,
     );
     defer enc.deinit();
-    errdefer enc.deinit();
 
     var frame = try common.Frame.init();
     defer frame.deinit();
-    errdefer frame.deinit();
 
     var packet = try common.Packet.init();
     defer packet.deinit();
-    errdefer packet.deinit();
 
     while (true) {
         const f = try frame.start();
         defer frame.end();
-        errdefer frame.end();
 
         if (!try src.fillFrame(f)) {
             break;
         }
-
-        std.debug.print("Frame size: {}\n", .{f.*.format});
-
-        std.debug.print("Encoder Info: {}x{}\n", .{ enc.context.*.width, enc.context.*.height });
 
         var packet_iter = try enc.getPackets(f, packet);
 

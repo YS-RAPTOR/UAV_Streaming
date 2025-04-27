@@ -96,6 +96,7 @@ pub const H264Codec = struct {
         pub inline fn next(self: *@This()) !?*ffmpeg.AVPacket {
             if (self.start) {
                 @branchHint(.unlikely);
+                std.debug.print("Unrefing packet\n", .{});
                 self.packet.end();
             }
             self.start = true;
@@ -112,17 +113,6 @@ pub const H264Codec = struct {
     };
 
     pub fn getPackets(self: *@This(), frame: *ffmpeg.AVFrame, packet: common.Packet) !PacketIterator {
-        std.debug.print("Frame debug:\n", .{});
-        std.debug.print("  format: {d} (expected {d})\n", .{ frame.*.format, self.context.*.pix_fmt });
-        std.debug.print("  width: {d} (expected {d})\n", .{ frame.*.width, self.context.*.width });
-        std.debug.print("  height: {d} (expected {d})\n", .{ frame.*.height, self.context.*.height });
-        std.debug.print("  linesize[0]: {d}\n", .{frame.*.linesize[0]});
-        std.debug.print("  linesize[1]: {d}\n", .{frame.*.linesize[1]});
-        std.debug.print("  linesize[2]: {d}\n", .{frame.*.linesize[2]});
-        std.debug.print("  data[0]: {*}\n", .{frame.*.data[0]});
-        std.debug.print("  data[1]: {*}\n", .{frame.*.data[1]});
-        std.debug.print("  data[2]: {*}\n", .{frame.*.data[2]});
-        //
         const ret = ffmpeg.avcodec_send_frame(self.context, frame);
         if (ret < 0) {
             return error.CouldNotSendFrame;

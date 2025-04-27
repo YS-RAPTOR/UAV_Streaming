@@ -46,10 +46,10 @@ const TestSource = struct {
 
     fn init(max_resolution: common.Resolution, max_frame_rate: common.FrameRate) !@This() {
         var filter_graph = ffmpeg.avfilter_graph_alloc();
-        errdefer ffmpeg.avfilter_graph_free(&filter_graph);
         if (filter_graph == null) {
             return error.CouldNotAllocateFilterGraph;
         }
+        errdefer ffmpeg.avfilter_graph_free(&filter_graph);
 
         var buffer: [256]u8 = undefined;
         const filter_description: [*:0]const u8 = try std.fmt.bufPrintZ(
@@ -66,11 +66,9 @@ const TestSource = struct {
 
         var inputs = ffmpeg.avfilter_inout_alloc();
         defer ffmpeg.avfilter_inout_free(&inputs);
-        errdefer ffmpeg.avfilter_inout_free(&inputs);
 
         var outputs = ffmpeg.avfilter_inout_alloc();
         defer ffmpeg.avfilter_inout_free(&outputs);
-        errdefer ffmpeg.avfilter_inout_free(&outputs);
 
         inputs.*.name = ffmpeg.av_strdup("in");
         inputs.*.filter_ctx = null;

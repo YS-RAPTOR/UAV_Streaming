@@ -2,7 +2,8 @@ import time
 import socket
 import subprocess
 import psutil
-import time
+import os
+import signal
 
 
 def kill_process_by_name(name):
@@ -24,6 +25,23 @@ def kill_process_by_name(name):
             proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+
+
+def kill_process_by_port(port):
+    try:
+        result = subprocess.check_output(
+            f"netstat -ano | findstr :{port}", shell=True
+        ).decode()
+        lines = result.strip().split("\n")
+        if not lines:
+            return
+
+        for line in lines:
+            parts = line.split()
+            pid = parts[-1]
+            os.kill(int(pid), signal.SIGTERM)
+    except Exception:
+        pass
 
 
 def clear_socket(address, port):
@@ -67,8 +85,6 @@ for PROTOCOL in PROTOCOLS:
                 PROTOCOL,
                 f".\\Runs\\{PROTOCOL}\\{SCENARIO}\\out.mp4",
             ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
         time.sleep(5)
         sender = subprocess.Popen(
@@ -86,19 +102,21 @@ for PROTOCOL in PROTOCOLS:
             raise Exception(f"Receiver exited with code {code}")
 
         try:
-            sender.terminate()
+            sender.kill()
             sender.wait()
             print("Sender terminated")
         except Exception:
             pass
 
         try:
-            proxy.terminate()
+            proxy.kill()
             proxy.wait()
             print("Proxy terminated")
         except Exception:
             pass
 
         kill_process_by_name("ffmpeg")
+        kill_process_by_port(2003)
+        kill_process_by_port(2004)
         clear_socket("127.0.0.1", 2003)
         clear_socket("127.0.0.1", 2004)

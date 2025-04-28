@@ -1,9 +1,10 @@
 import time
 import socket
+import argparse
 from pathlib import Path
 from collections import deque
 from random import Random
-from typing import Deque, List, Literal, Tuple
+from typing import Deque, List, Literal
 from common import (
     ConstantProvider,
     RandomExpovariate,
@@ -161,9 +162,9 @@ Worst
     No of Packet Corruptions: ExpoVariate(2)
 """
 
-Scenario: Literal["Best", "Average", "Worst", "Testing"] = "Worst"
+Scenario: Literal["Best", "Average", "Worst", "Testing"] = "Average"
 Spike_Chance = 0.005
-Spike_Duration = 10
+Spike_Duration = 30
 Seed = 0
 Update_Every = 0.5
 Project_Name = "Test"
@@ -176,6 +177,19 @@ else:
 
 if __name__ == "__main__":
     main_rng = Random(Seed)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scenario", type=str, default=None)
+    parser.add_argument("--project", type=str, default=None)
+
+    args = parser.parse_args()
+
+    if args.scenario is None or args.project is None:
+        raise ValueError("Please provide a scenario and project name")
+
+    Project_Name = args.project
+    Scenario = args.scenario
+
     Run.mkdir(parents=True, exist_ok=True)
 
     if Scenario == "Best":
@@ -265,7 +279,7 @@ if __name__ == "__main__":
             folder=Run.joinpath(Scenario),
             update_every=Update_Every,
             bandwidth=ConstantProvider(10**5),
-            latency=ConstantProvider(0),
+            latency=ConstantProvider(1000 / 1000),
             packet_loss_rate=ConstantProvider(0),
             packet_corruption_rate=ConstantProvider(0),
             no_of_packet_corruptions=ConstantProvider(0),

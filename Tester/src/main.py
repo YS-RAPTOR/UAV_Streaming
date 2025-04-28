@@ -169,11 +169,6 @@ Seed = 0
 Update_Every = 0.5
 Project_Name = "Test"
 
-if Project_Name == "Test":
-    Run = Path(f"./Runs/Test-{time.time_ns()}")
-else:
-    Run = Path(f"./Runs/{Project_Name}")
-
 
 if __name__ == "__main__":
     main_rng = Random(Seed)
@@ -189,6 +184,11 @@ if __name__ == "__main__":
 
     Project_Name = args.project
     Scenario = args.scenario
+
+    if Project_Name == "Test":
+        Run = Path(f"./Runs/Test-{time.time_ns()}")
+    else:
+        Run = Path(f"./Runs/{Project_Name}")
 
     Run.mkdir(parents=True, exist_ok=True)
 

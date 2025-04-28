@@ -1,32 +1,46 @@
+import time
 import subprocess
 
-PROTOCOLS = ["udp", "rtp", "srt", "rist"]
-SCENARIOS = ["Best", "Average", "Worst", "Testing"]
-
-DURATION = 5 * 60  # seconds
+PROTOCOLS = ["rtp", "srt", "rist", "udp"]
+SCENARIOS = ["Best", "Average", "Worst"]
 
 for PROTOCOL in PROTOCOLS:
     for SCENARIO in SCENARIOS:
         print(f"Testing {PROTOCOL} with {SCENARIO} scenario")
-        # os.system(f"python3 Tester/src/main.py --protocol {PROTOCOL} --scenario {SCENARIO}")
         proxy = subprocess.Popen(
             [
                 "uv",
                 "run",
-                "./src/main.py",
+                ".\\src\\main.py",
                 "--project",
                 PROTOCOL,
                 "--scenario",
                 SCENARIO,
-            ]
+            ],
         )
-
+        time.sleep(5)
         receiver = subprocess.Popen(
-            ["./src/receiver.bat", PROTOCOL, f"./Runs/{PROTOCOL}/{SCENARIO}/out.mp4"]
+            [
+                "src\\receiver.bat",
+                PROTOCOL,
+                f".\\Runs\\{PROTOCOL}\\{SCENARIO}\\out.mp4",
+            ],
         )
-        sender = subprocess.Popen(["./src/sender.bat", PROTOCOL])
+        time.sleep(5)
+        sender = subprocess.Popen(
+            ["src\\sender.bat", PROTOCOL],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         code = receiver.wait()
-        print(f"Receiver exited with code {code}")
+
+        print("Receiver exited with code", code)
+        if code != 0:
+            print("\a")
+            sender.kill()
+            receiver.kill()
+            proxy.kill()
+            raise Exception(f"Receiver exited with code {code}")
 
         try:
             sender.terminate()

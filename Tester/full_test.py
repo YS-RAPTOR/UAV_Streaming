@@ -1,5 +1,47 @@
 import time
+import socket
 import subprocess
+import psutil
+import time
+
+
+def kill_process_by_name(name):
+    matching_processes = []
+
+    for proc in psutil.process_iter(["pid", "name"]):
+        if name.lower() in proc.info["name"].lower():
+            matching_processes.append(proc)
+
+    for proc in matching_processes:
+        try:
+            proc.terminate()  # or proc.kill() for a forceful termination
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    _, alive = psutil.wait_procs(matching_processes, timeout=3)
+    for proc in alive:
+        try:
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
+def clear_socket(address, port):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((address, port))
+
+    sock.settimeout(1)
+
+    while True:
+        try:
+            data, addr = sock.recvfrom(4096)
+            # print( f"Clearing socket {address}:{port} - Received data: {len(data)} from {addr}")
+        except socket.timeout:
+            break
+        except Exception:
+            pass
+    sock.close()
+
 
 PROTOCOLS = ["rtp", "srt", "rist", "udp"]
 SCENARIOS = ["Best", "Average", "Worst"]
@@ -25,6 +67,8 @@ for PROTOCOL in PROTOCOLS:
                 PROTOCOL,
                 f".\\Runs\\{PROTOCOL}\\{SCENARIO}\\out.mp4",
             ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         time.sleep(5)
         sender = subprocess.Popen(
@@ -34,7 +78,6 @@ for PROTOCOL in PROTOCOLS:
         )
         code = receiver.wait()
 
-        print("Receiver exited with code", code)
         if code != 0:
             print("\a")
             sender.kill()
@@ -44,10 +87,18 @@ for PROTOCOL in PROTOCOLS:
 
         try:
             sender.terminate()
+            sender.wait()
+            print("Sender terminated")
         except Exception:
             pass
 
         try:
             proxy.terminate()
+            proxy.wait()
+            print("Proxy terminated")
         except Exception:
             pass
+
+        kill_process_by_name("ffmpeg")
+        clear_socket("127.0.0.1", 2003)
+        clear_socket("127.0.0.1", 2004)

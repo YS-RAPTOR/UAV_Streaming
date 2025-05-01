@@ -1,5 +1,5 @@
 const ffmpeg = @import("ffmpeg");
-const common = @import("common.zig");
+const common = @import("../common/common.zig");
 const std = @import("std");
 
 pub const H264Codec = struct {
@@ -111,12 +111,21 @@ pub const H264Codec = struct {
         }
     };
 
-    pub fn getPackets(self: *@This(), frame: *ffmpeg.AVFrame, packet: common.Packet) !PacketIterator {
+    pub fn submitFrame(self: *@This(), frame: *ffmpeg.AVFrame) !void {
         const ret = ffmpeg.avcodec_send_frame(self.context, frame);
         if (ret < 0) {
             return error.CouldNotSendFrame;
         }
+    }
 
-        return PacketIterator.init(packet, self.context);
+    pub fn receivePacket(self: *@This(), packet: *ffmpeg.AVPacket) !bool {
+        const ret = ffmpeg.avcodec_receive_packet(self.context, packet);
+        if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or ret == ffmpeg.AVERROR_EOF) {
+            return false;
+        } else if (ret < 0) {
+            return error.CouldNotReceivePacket;
+        }
+
+        return true;
     }
 };

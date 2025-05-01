@@ -1,50 +1,14 @@
 const ffmpeg = @import("ffmpeg");
 const std = @import("std");
-const common = @import("common.zig");
+const common = @import("../common/common.zig");
+const builtins = @import("builtin");
 
-pub const SourceType = enum {
-    Test,
-    Camera,
-};
-
-pub const Source = union(SourceType) {
-    Test: TestSource,
-    Camera: CameraSource,
-
-    pub inline fn init(
-        source_type: SourceType,
-        max_resolution: common.Resolution,
-        max_frame_rate: common.FrameRate,
-    ) !@This() {
-        switch (source_type) {
-            .Test => return .{ .Test = try TestSource.init(max_resolution, max_frame_rate) },
-            .Camera => return .{ .Camera = try CameraSource.init(max_resolution, max_frame_rate) },
-        }
-    }
-
-    pub inline fn deinit(self: *@This()) void {
-        switch (self.*) {
-            inline else => |*source| {
-                source.deinit();
-            },
-        }
-    }
-
-    pub inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !bool {
-        switch (self.*) {
-            inline else => |*source| {
-                return source.fillFrame(frame);
-            },
-        }
-    }
-};
-
-const TestSource = struct {
+pub const TestSource = struct {
     filter: *ffmpeg.AVFilterGraph,
     source: *ffmpeg.AVFilterContext,
     sink: *ffmpeg.AVFilterContext,
 
-    fn init(max_resolution: common.Resolution, max_frame_rate: common.FrameRate) !@This() {
+    pub fn init(max_resolution: common.Resolution, max_frame_rate: common.FrameRate) !@This() {
         var filter_graph = ffmpeg.avfilter_graph_alloc();
         if (filter_graph == null) {
             return error.CouldNotAllocateFilterGraph;
@@ -115,7 +79,7 @@ const TestSource = struct {
         };
     }
 
-    inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !bool {
+    pub inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !bool {
         const ret = ffmpeg.av_buffersink_get_frame(self.sink, frame);
         if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or ret == ffmpeg.AVERROR_EOF) {
             return false;
@@ -125,13 +89,39 @@ const TestSource = struct {
         return true;
     }
 
-    inline fn deinit(self: *@This()) void {
+    pub inline fn deinit(self: *@This()) void {
         ffmpeg.avfilter_graph_free(@ptrCast(&self.filter));
     }
 };
 
 const CameraSource = struct {
-    fn init(max_resolution: common.Resolution, max_frame_rate: common.FrameRate) !@This() {
+    input: *ffmpeg.AVInputFormat,
+    context: *ffmpeg.AVFormatContext,
+
+    fn init(max_resolution: common.Resolution, max_frame_rate: common.FrameRate, device: []const u8) !@This() {
+        const input_format: *const ffmpeg.AVInputFormat = blk: {
+            if (builtins.os.tag == .windows) {
+                break :blk ffmpeg.av_find_input_format("dshow");
+            } else if (builtins.os.tag == .linux) {
+                break :blk ffmpeg.av_find_input_format("v4l2");
+            } else {
+                return error.UnsupportedPlatform;
+            }
+        };
+        var context: [*c]ffmpeg.AVFormatContext = null;
+
+        var ret = ffmpeg.avformat_open_input(&context, device.ptr, input_format, null);
+        if (ret < 0) {
+            return error.CouldNotOpenInput;
+        }
+        errdefer ffmpeg.avformat_close_input(&context);
+
+        ret = ffmpeg.avformat_find_stream_info(context, null);
+        if (ret < 0) {
+            return error.CouldNotFindStreamInfo;
+        }
+        ffmpeg.av_dump_format(context, 0, device.ptr, 0);
+
         _ = max_resolution;
         _ = max_frame_rate;
 

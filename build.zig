@@ -58,14 +58,14 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const ffmpeg = b.addTranslateC(.{
-        .root_source_file = b.path("src/ffmpeg.h"),
+        .root_source_file = b.path("src/c/ffmpeg.h"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     }).createModule();
 
     const sdl = b.addTranslateC(.{
-        .root_source_file = b.path("src/sdl.h"),
+        .root_source_file = b.path("src/c/sdl.h"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -74,7 +74,7 @@ pub fn build(b: *std.Build) void {
     const ffmpeg_dep = Dependency{
         .name = "ffmpeg",
         .module = ffmpeg,
-        .system_libs = &[_][]const u8{ "avutil", "avformat", "avcodec", "avfilter" },
+        .system_libs = &[_][]const u8{ "avutil", "avformat", "avcodec", "avfilter", "avdevice" },
     };
 
     const receiver = create(

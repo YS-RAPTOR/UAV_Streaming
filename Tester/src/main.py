@@ -248,7 +248,7 @@ if __name__ == "__main__":
             ),
             no_of_packet_corruptions=RandomExpovariate(
                 seed=main_rng.randint(0, 10**5),
-                lam=2,
+                lam=2.5,
                 start_value=1,
             ),
         )
@@ -270,7 +270,7 @@ if __name__ == "__main__":
             packet_corruption_rate=ConstantProvider(5 / 100),
             no_of_packet_corruptions=RandomExpovariate(
                 seed=main_rng.randint(0, 10**5),
-                lam=2,
+                lam=2.5,
                 start_value=1,
             ),
         )

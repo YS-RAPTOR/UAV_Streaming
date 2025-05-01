@@ -1,8 +1,10 @@
 #define __STDC_CONSTANT_MACROS
 #include <libavcodec/avcodec.h>
+#include <libavdevice/avdevice.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
 #include <libavformat/avformat.h>
+#include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>

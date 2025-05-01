@@ -29,7 +29,7 @@ class ConstantProvider(Provider):
 
 
 class RandomExpovariate(Provider):
-    def __init__(self, seed: int, lam: int, start_value: int):
+    def __init__(self, seed: int, lam: float, start_value: int):
         self.rng = Random(seed)
         self.start_value = start_value
         self.lam = lam

@@ -1,4 +1,5 @@
 const std = @import("std");
+const ffmpeg = @import("ffmpeg");
 const common = @import("./common/common.zig");
 const parse = @import("./common/parse.zig");
 const pipeline = @import("./sender/pipeline.zig");
@@ -12,6 +13,8 @@ const SenderArguments = struct {
     frame_rate: common.FrameRate,
     pipeline: pipeline.SupportedPipelines,
     device: []const u8,
+    send_address: []const u8,
+    bind_address: []const u8,
 
     pub const default: SenderArguments = .{
         .resolution = .@"2160p",
@@ -19,7 +22,21 @@ const SenderArguments = struct {
         // TODO: Change to Camera after testing
         .pipeline = .Test,
         .device = "/dev/video0",
+        .send_address = "127.0.0.1:2003",
+        .bind_address = "127.0.0.1:2004",
     };
+
+    pub fn getAddress(address: []const u8) !struct { []const u8, u16 } {
+        const index = std.mem.indexOf(u8, address, ":");
+        if (index == null) {
+            return error.InvalidAddress;
+        }
+
+        const addr = address[0..index.?];
+        const port = address[index.? + 1 ..];
+
+        return .{ addr, try std.fmt.parseInt(u16, port, 10) };
+    }
 };
 
 const help =
@@ -58,24 +75,68 @@ pub fn main() !void {
         return;
     };
 
-    var pl = try pipeline.Pipeline.init(
+    var pl = pipeline.Pipeline.init(
         arguements.pipeline,
         arguements.resolution,
         arguements.frame_rate,
-    );
+    ) catch |err| {
+        std.debug.print("Error initializing pipeline: {}\n", .{err});
+        return;
+    };
 
-    var shared_memory: SharedMemory = try .init(
+    var shared_memory = SharedMemory.init(
         allocator,
         arguements.resolution,
         arguements.frame_rate,
         5,
-    );
+    ) catch |err| {
+        std.debug.print("Error initializing shared memory: {}\n", .{err});
+        return;
+    };
     defer shared_memory.deinit();
+
+    const send_address, const send_port = SenderArguments.getAddress(
+        arguements.send_address,
+    ) catch |err| {
+        std.debug.print("Invalid send address: {}\n", .{err});
+        return;
+    };
+    const bind_address, const bind_port = SenderArguments.getAddress(
+        arguements.bind_address,
+    ) catch |err| {
+        std.debug.print("Invalid bind address: {}\n", .{err});
+        return;
+    };
+
+    var transfer_loop = TransferLoop.init(
+        allocator,
+        bind_address,
+        bind_port,
+        send_address,
+        send_port,
+        &shared_memory,
+    ) catch |err| {
+        std.debug.print("Error initializing transfer loop: {}\n", .{err});
+        return;
+    };
+
+    const thread = std.Thread.spawn(
+        .{
+            .allocator = allocator,
+            .stack_size = 16 * 1024 * 1024,
+        },
+        TransferLoop.run,
+        .{&transfer_loop},
+    ) catch |err| {
+        std.debug.print("Error spawning thread: {}\n", .{err});
+        return;
+    };
 
     const start_time = std.time.milliTimestamp();
     var frames: u32 = 0;
 
-    while (true) {
+    while (shared_memory.isRunning()) {
+        errdefer shared_memory.crash();
         defer frames +%= 1;
 
         const settings = shared_memory.getSettings();
@@ -84,7 +145,7 @@ pub fn main() !void {
         }
         defer pl.end();
 
-        if (frames > 54005) {
+        if (frames > 100) {
             break;
         }
 
@@ -104,20 +165,12 @@ pub fn main() !void {
                 .size = 0,
                 .crc = 0,
 
-                .is_key_frame = true,
+                .is_key_frame = (packet.flags & ffmpeg.AV_PKT_FLAG_KEY) != 0,
                 .generated_timestamp = @intCast(std.time.milliTimestamp() - start_time),
                 .resolution = settings.resolution,
                 .frame_rate = settings.frame_rate,
             });
         }
     }
-
-    for (0..shared_memory.committed_packets.items.len) |id| {
-        const packet = shared_memory.getPacket(id);
-        if (packet.header.crc == 0) {
-            break;
-        }
-
-        std.debug.print("{}\n", .{packet.header});
-    }
+    thread.join();
 }

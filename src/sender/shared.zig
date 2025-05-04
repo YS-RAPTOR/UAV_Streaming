@@ -1,15 +1,17 @@
 const std = @import("std");
-const udp = @import("udp.zig");
+const udp = @import("../common/udp.zig");
 const common = @import("../common/common.zig");
 
 pub const SharedMemory = struct {
     allocator: std.mem.Allocator,
 
-    committed_packets: std.ArrayListUnmanaged(udp.UdpSendPacket),
+    committed_packets: std.ArrayListUnmanaged(udp.UdpSenderPacket),
     hash_offset: u64,
 
     current_packet: std.atomic.Value(u64),
     settings: std.atomic.Value(Settings),
+    running: std.atomic.Value(bool),
+    main_thread_crash: std.atomic.Value(bool),
 
     pub const Settings = packed struct(u32) {
         resolution: common.Resolution,
@@ -23,15 +25,15 @@ pub const SharedMemory = struct {
         starting_frame_rate: common.FrameRate,
         comptime storage_time: comptime_int,
     ) !SharedMemory {
-        const hash_offset = comptime blk: {
+        const hash_offset, const no_of_udp_packets = comptime blk: {
             const no_of_udp_packets = storage_time * 60 * 60 * 3;
             const max_id = std.math.maxInt(u64) + 1;
             const div = max_id / no_of_udp_packets;
-            break :blk (div + 1) * no_of_udp_packets - max_id;
+
+            break :blk .{ (div + 1) * no_of_udp_packets - max_id, no_of_udp_packets };
         };
 
-        const no_of_udp_packets = storage_time * 60 * 60 * 2;
-        var committed_packets: std.ArrayListUnmanaged(udp.UdpSendPacket) = .empty;
+        var committed_packets: std.ArrayListUnmanaged(udp.UdpSenderPacket) = .empty;
         try committed_packets.appendNTimes(allocator, .empty, no_of_udp_packets);
         errdefer committed_packets.deinit(allocator);
 
@@ -44,6 +46,8 @@ pub const SharedMemory = struct {
                 .resolution = starting_resolution,
                 .frame_rate = starting_frame_rate,
             }),
+            .running = .init(true),
+            .main_thread_crash = .init(false),
         };
     }
 
@@ -55,8 +59,8 @@ pub const SharedMemory = struct {
         return (id + self.hash_offset) % self.committed_packets.items.len;
     }
 
-    pub inline fn insertPackets(self: *@This(), data: []u8, header: udp.UdpSendPacket.Header) void {
-        const no_of_splits = data.len / udp.UdpSendPacket.MAX_DATA_SIZE + 1;
+    pub inline fn insertPackets(self: *@This(), data: []u8, header: udp.UdpSenderPacket.Header) void {
+        const no_of_splits = data.len / udp.UdpSenderPacket.MAX_DATA_SIZE + 1;
         const chunk_size = data.len / no_of_splits;
         const chunk_remainder = data.len % no_of_splits;
 
@@ -87,7 +91,7 @@ pub const SharedMemory = struct {
     pub inline fn getPacket(
         self: *@This(),
         id: u64,
-    ) udp.UdpSendPacket {
+    ) udp.UdpSenderPacket {
         const index = self.getIndex(id);
         return self.committed_packets.items[index];
     }
@@ -105,5 +109,21 @@ pub const SharedMemory = struct {
 
     pub inline fn getSettings(self: *@This()) Settings {
         return self.settings.load(.unordered);
+    }
+
+    pub inline fn isRunning(self: *@This()) bool {
+        return self.running.load(.unordered);
+    }
+
+    pub inline fn stop(self: *@This()) void {
+        self.running.store(false, .unordered);
+    }
+
+    pub inline fn crash(self: *@This()) void {
+        self.main_thread_crash.store(true, .unordered);
+    }
+
+    pub inline fn isCrashed(self: *@This()) bool {
+        return self.main_thread_crash.load(.unordered);
     }
 };

@@ -1,3 +1,4 @@
+const std = @import("std");
 const Packet = @import("ffmpeg").AVPacket;
 
 const source = @import("source.zig");
@@ -30,9 +31,9 @@ pub const Pipeline = union(SupportedPipelines) {
         }
     }
 
-    pub fn start(self: *@This()) !bool {
+    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate) !bool {
         switch (self.*) {
-            inline else => |*p| return try p.start(),
+            inline else => |*p| return try p.start(resolution, frame_rate),
         }
     }
 
@@ -61,6 +62,8 @@ const TestPipeline = struct {
     encoder: encoder.H264Codec,
     packet: common.Packet,
     started: bool,
+    resolution: common.Resolution,
+    frame_rate: common.FrameRate,
 
     fn init(max_resolution: common.Resolution, max_frame_rate: common.FrameRate) !@This() {
         var frame = try common.Frame.init();
@@ -81,7 +84,22 @@ const TestPipeline = struct {
             .encoder = enc,
             .packet = packet,
             .started = false,
+            .resolution = max_resolution,
+            .frame_rate = max_frame_rate,
         };
+    }
+
+    fn changeSettings(
+        self: *TestPipeline,
+        new_resolution: common.Resolution,
+        new_frame_rate: common.FrameRate,
+    ) !void {
+        defer self.frame_rate = new_frame_rate;
+        defer self.resolution = new_resolution;
+        std.debug.print(
+            "New Settings: {s}@{}",
+            .{ new_resolution.getResolutionString(), @intFromEnum(new_frame_rate) },
+        );
     }
 
     fn deinit(self: *TestPipeline) void {
@@ -91,10 +109,15 @@ const TestPipeline = struct {
         self.frame.deinit();
     }
 
-    fn start(self: *TestPipeline) !bool {
+    fn start(self: *TestPipeline, resolution: common.Resolution, frame_rate: common.FrameRate) !bool {
         if (self.started) {
             unreachable;
         }
+
+        if (resolution != self.resolution or frame_rate != self.frame_rate) {
+            try self.changeSettings(resolution, frame_rate);
+        }
+
         self.started = true;
         const f = try self.frame.start();
         errdefer self.frame.end();
@@ -145,8 +168,10 @@ const EncodedCameraPipeline = struct {
         _ = self;
     }
 
-    fn start(self: *@This()) !bool {
+    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate) !bool {
         _ = self;
+        _ = resolution;
+        _ = frame_rate;
         return false;
     }
 

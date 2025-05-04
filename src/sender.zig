@@ -18,7 +18,7 @@ const SenderArguments = struct {
 
     pub const default: SenderArguments = .{
         .resolution = .@"2160p",
-        .frame_rate = .@"60",
+        .frame_rate = .@"30",
         // TODO: Change to Camera after testing
         .pipeline = .Test,
         .device = "/dev/video0",
@@ -131,20 +131,24 @@ pub fn main() !void {
         defer count +%= 1;
 
         const settings = shared_memory.getSettings();
-        if (!try pl.start(settings.resolution, settings.frame_rate)) {
+
+        const should_skip = settings.frame_rate == .@"30" and count % 2 == 1;
+
+        if (!try pl.start(settings.resolution, settings.frame_rate, !should_skip)) {
             break;
         }
         defer pl.end();
 
-        if (count > 100) {
+        if (count > 1000) {
             shared_memory.crash();
             break;
         }
 
-        if (settings.frame_rate == .@"30" and count % 2 == 1) {
+        if (should_skip) {
             continue;
         }
 
+        var no_of_packets: u8 = 0;
         while (try pl.getPacket()) |packet| {
             var data: []u8 = undefined;
             data.len = @intCast(packet.size);
@@ -163,7 +167,10 @@ pub fn main() !void {
                 .frame_rate = settings.frame_rate,
                 .frame_number = frame_no,
             });
+            no_of_packets += 1;
         }
+        std.debug.assert(no_of_packets <= 1);
+
         frame_no += 1;
     }
     thread.join();

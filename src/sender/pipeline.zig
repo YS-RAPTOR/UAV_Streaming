@@ -31,9 +31,9 @@ pub const Pipeline = union(SupportedPipelines) {
         }
     }
 
-    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate) !bool {
+    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate, submit: bool) !bool {
         switch (self.*) {
-            inline else => |*p| return try p.start(resolution, frame_rate),
+            inline else => |*p| return try p.start(resolution, frame_rate, submit),
         }
     }
 
@@ -109,7 +109,7 @@ const TestPipeline = struct {
         self.frame.deinit();
     }
 
-    fn start(self: *TestPipeline, resolution: common.Resolution, frame_rate: common.FrameRate) !bool {
+    fn start(self: *TestPipeline, resolution: common.Resolution, frame_rate: common.FrameRate, submit: bool) !bool {
         if (self.started) {
             unreachable;
         }
@@ -129,7 +129,9 @@ const TestPipeline = struct {
             return false;
         }
 
-        try self.encoder.submitFrame(f);
+        if (submit) {
+            try self.encoder.submitFrame(f);
+        }
         return true;
     }
 
@@ -168,10 +170,11 @@ const EncodedCameraPipeline = struct {
         _ = self;
     }
 
-    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate) !bool {
+    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate, submit: bool) !bool {
         _ = self;
         _ = resolution;
         _ = frame_rate;
+        _ = submit;
         return false;
     }
 

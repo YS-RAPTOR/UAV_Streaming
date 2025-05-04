@@ -146,7 +146,6 @@ pub const TransferLoop = struct {
                     return err;
                 }
             };
-            std.debug.print("Sent packet {} of size {}\n", .{ self.current_id, len });
 
             self.current_id +%= 1;
         }

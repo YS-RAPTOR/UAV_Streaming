@@ -4,7 +4,7 @@ const Crc = std.hash.crc.Crc32Iscsi;
 const common = @import("../common/common.zig");
 
 pub const UdpSenderPacket = struct {
-    pub const MAX_DATA_SIZE = 32 * 1024;
+    pub const MAX_DATA_SIZE = 1 * 1024;
     pub const Header = struct {
         id: u64,
         no_of_splits: u8,
@@ -16,6 +16,7 @@ pub const UdpSenderPacket = struct {
         generated_timestamp: u64,
         resolution: common.Resolution,
         frame_rate: common.FrameRate,
+        frame_number: u64,
 
         pub const empty: @This() = .{
             .id = 0,
@@ -27,6 +28,7 @@ pub const UdpSenderPacket = struct {
             .frame_rate = .@"30",
             .size = 0,
             .crc = 0,
+            .frame_number = 0,
         };
 
         pub fn format(

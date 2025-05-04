@@ -25,18 +25,6 @@ const SenderArguments = struct {
         .send_address = "127.0.0.1:2003",
         .bind_address = "127.0.0.1:2004",
     };
-
-    pub fn getAddress(address: []const u8) !struct { []const u8, u16 } {
-        const index = std.mem.indexOf(u8, address, ":");
-        if (index == null) {
-            return error.InvalidAddress;
-        }
-
-        const addr = address[0..index.?];
-        const port = address[index.? + 1 ..];
-
-        return .{ addr, try std.fmt.parseInt(u16, port, 10) };
-    }
 };
 
 const help =
@@ -45,9 +33,11 @@ const help =
     \\      2160p, 1440p, 1080p, 720p, 480p, 360p
     \\-f, --frame-rate [rate]    Sets the max frame rate (default: 60)
     \\      60, 30
-    \\-s, --pipeline [src]       Set the source type (default: Camera)
+    \\-p, --pipeline [src]       Set the source type (default: Camera)
     \\      EncodedCamera, Test
     \\-d, --device [device]      Set the camera device name (default: /dev/video0)
+    \\-s, --send-address [addr]  Set the video address to send the video to (default: 127.0.0.1:2003)
+    \\-b, --bind-address [addr]  Set the address that binds the sender to (default:127.0.0.1:2004)
 ;
 
 pub fn main() !void {
@@ -88,20 +78,20 @@ pub fn main() !void {
         allocator,
         arguements.resolution,
         arguements.frame_rate,
-        5,
+        2,
     ) catch |err| {
         std.debug.print("Error initializing shared memory: {}\n", .{err});
         return;
     };
     defer shared_memory.deinit();
 
-    const send_address, const send_port = SenderArguments.getAddress(
+    const send_address, const send_port = parse.getAddress(
         arguements.send_address,
     ) catch |err| {
         std.debug.print("Invalid send address: {}\n", .{err});
         return;
     };
-    const bind_address, const bind_port = SenderArguments.getAddress(
+    const bind_address, const bind_port = parse.getAddress(
         arguements.bind_address,
     ) catch |err| {
         std.debug.print("Invalid bind address: {}\n", .{err});
@@ -133,11 +123,12 @@ pub fn main() !void {
     };
 
     const start_time = std.time.milliTimestamp();
-    var frames: u32 = 0;
+    var count: u32 = 0;
+    var frame_no: u64 = 0;
 
     while (shared_memory.isRunning()) {
         errdefer shared_memory.crash();
-        defer frames +%= 1;
+        defer count +%= 1;
 
         const settings = shared_memory.getSettings();
         if (!try pl.start(settings.resolution, settings.frame_rate)) {
@@ -145,11 +136,12 @@ pub fn main() !void {
         }
         defer pl.end();
 
-        if (frames > 100) {
+        if (count > 100) {
+            shared_memory.crash();
             break;
         }
 
-        if (settings.frame_rate == .@"30" and frames % 2 == 1) {
+        if (settings.frame_rate == .@"30" and count % 2 == 1) {
             continue;
         }
 
@@ -169,8 +161,10 @@ pub fn main() !void {
                 .generated_timestamp = @intCast(std.time.milliTimestamp() - start_time),
                 .resolution = settings.resolution,
                 .frame_rate = settings.frame_rate,
+                .frame_number = frame_no,
             });
         }
+        frame_no += 1;
     }
     thread.join();
 }

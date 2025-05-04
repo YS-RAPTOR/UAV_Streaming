@@ -23,10 +23,11 @@ pub const SharedMemory = struct {
         allocator: std.mem.Allocator,
         starting_resolution: common.Resolution,
         starting_frame_rate: common.FrameRate,
-        comptime storage_time: comptime_int,
+        comptime storage: comptime_int,
     ) !SharedMemory {
         const hash_offset, const no_of_udp_packets = comptime blk: {
-            const no_of_udp_packets = storage_time * 60 * 60 * 3;
+            const storate_bytes: comptime_float = storage * 1024.0 * 1024.0 * 1024.0;
+            const no_of_udp_packets: comptime_int = @intFromFloat(@ceil((storate_bytes / udp.UdpSenderPacket.MAX_DATA_SIZE)));
             const max_id = std.math.maxInt(u64) + 1;
             const div = max_id / no_of_udp_packets;
 
@@ -60,9 +61,9 @@ pub const SharedMemory = struct {
     }
 
     pub inline fn insertPackets(self: *@This(), data: []u8, header: udp.UdpSenderPacket.Header) void {
-        const no_of_splits = data.len / udp.UdpSenderPacket.MAX_DATA_SIZE + 1;
+        const no_of_splits = (data.len / udp.UdpSenderPacket.MAX_DATA_SIZE) + 1;
         const chunk_size = data.len / no_of_splits;
-        const chunk_remainder = data.len % no_of_splits;
+        var chunk_remainder = data.len % no_of_splits;
 
         for (0..no_of_splits) |split| {
             const current_id = self.current_packet.load(.unordered);
@@ -73,8 +74,10 @@ pub const SharedMemory = struct {
             var slice: []u8 = undefined;
             slice.len = chunk_size;
             slice.ptr = data.ptr + chunk_size * split;
-            if (split == no_of_splits - 1) {
-                slice.len += chunk_remainder;
+
+            if (chunk_remainder > 0) {
+                slice.len += 1;
+                chunk_remainder -= 1;
             }
 
             self.committed_packets.items[index].header = header;

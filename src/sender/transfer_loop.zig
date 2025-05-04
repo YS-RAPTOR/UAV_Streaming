@@ -36,8 +36,8 @@ pub const TransferLoop = struct {
             .is_running = true,
             .last_packet_received = 0,
 
-            .bind_address = try std.net.Address.parseIp4(bind_address, bind_port),
-            .send_address = try std.net.Address.parseIp4(send_address, send_port),
+            .bind_address = try std.net.Address.resolveIp(bind_address, bind_port),
+            .send_address = try std.net.Address.resolveIp(send_address, send_port),
         };
     }
 
@@ -47,6 +47,7 @@ pub const TransferLoop = struct {
 
     pub fn run(self: *@This()) !void {
         defer self.shared_memory.stop();
+        std.debug.print("Starting transfer loop...\n", .{});
 
         var array: std.ArrayListUnmanaged(u8) = try .initCapacity(self.allocator, 70_000);
         array.appendNTimesAssumeCapacity(0, 70_000);
@@ -55,101 +56,16 @@ pub const TransferLoop = struct {
 
         const socket = try posix.socket(
             posix.AF.INET,
-            posix.SOCK.NONBLOCK | posix.SOCK.DGRAM,
-            posix.IPPROTO.UDP,
+            posix.SOCK.DGRAM | posix.SOCK.CLOEXEC | posix.SOCK.NONBLOCK,
+            0,
         );
         defer posix.close(socket);
-        try posix.bind(socket, @ptrCast(&self.bind_address.un), self.bind_address.getOsSockLen());
 
-        var other_address: posix.sockaddr = undefined;
-        var other_address_len: posix.socklen_t = @sizeOf(posix.sockaddr);
+        try posix.bind(socket, &self.bind_address.any, self.bind_address.getOsSockLen());
+        try posix.connect(socket, &self.send_address.any, self.send_address.getOsSockLen());
 
         while (!self.shared_memory.isCrashed()) {
-            // Try to Receive Packets. If Fails break
-
-            while (true) {
-                const len = posix.recvfrom(
-                    socket,
-                    buffer,
-                    0,
-                    &other_address,
-                    &other_address_len,
-                ) catch |err| {
-                    if (err == error.WouldBlock) {
-                        break;
-                    } else {
-                        std.debug.print("Error receiving packet: {}\n", err);
-                        return err;
-                    }
-                };
-
-                var packet: udp.UdpReceiverPacket = undefined;
-                packet.deserialize(buffer[0..len]);
-
-                if (!packet.is_valid()) {
-                    continue;
-                }
-                // Modify settings
-                self.shared_memory.modifySettings(
-                    packet.header.new_resolution,
-                    packet.header.new_frame_rate,
-                );
-
-                // Stop if stop is set
-                if (packet.header.stop) {
-                    self.is_running = false;
-                    self.shared_memory.stop();
-                }
-
-                // Add the packet to the nacks
-                for (packet.nacks) |nack| {
-                    _ = try self.nacks.getOrPut(self.allocator, nack);
-                }
-                self.last_packet_received = std.time.milliTimestamp();
-            }
-
-            const current_id = self.shared_memory.current_packet.load(.unordered);
-            while (self.current_id != current_id) {
-                // Try to Send Packets. If fails break
-
-                const packet = self.shared_memory.getPacket(self.current_id);
-                const len = packet.serialize(buffer);
-                _ = posix.sendto(
-                    socket,
-                    buffer[0..len],
-                    0,
-                    @ptrCast(&self.send_address.un),
-                    self.send_address.getOsSockLen(),
-                ) catch |err| {
-                    if (err == error.WouldBlock) {
-                        break;
-                    } else {
-                        std.debug.print("Error sending packet: {}\n", err);
-                        return err;
-                    }
-                };
-
-                self.current_id +%= 1;
-            }
-
-            for (self.nacks.keys()) |id| {
-                const packet = self.shared_memory.getPacket(id);
-                const len = packet.serialize(buffer);
-                _ = posix.sendto(
-                    socket,
-                    buffer[0..len],
-                    0,
-                    @ptrCast(&self.send_address.un),
-                    self.send_address.getOsSockLen(),
-                ) catch |err| {
-                    if (err == error.WouldBlock) {
-                        break;
-                    } else {
-                        std.debug.print("Error sending packet: {}\n", err);
-                        return err;
-                    }
-                };
-            }
+            try self.sendNewPackets(socket, buffer);
 
             // Have to keep acknowledging nacks
             if (!self.is_running) {
@@ -158,6 +74,100 @@ pub const TransferLoop = struct {
                     break;
                 }
             }
+        }
+    }
+
+    fn receivePackets(self: *@This(), socket: posix.socket_t, buffer: []u8) !void {
+        var other_address: posix.sockaddr = undefined;
+        var other_address_len: posix.socklen_t = @sizeOf(posix.sockaddr);
+
+        while (true) {
+            const len = posix.recvfrom(
+                socket,
+                buffer,
+                0,
+                &other_address,
+                &other_address_len,
+            ) catch |err| {
+                if (err == error.WouldBlock) {
+                    break;
+                } else {
+                    return err;
+                }
+            };
+            var packet: udp.UdpReceiverPacket = undefined;
+            packet.deserialize(buffer[0..len]);
+
+            if (!packet.is_valid()) {
+                continue;
+            }
+            // Modify settings
+            self.shared_memory.modifySettings(
+                packet.header.new_resolution,
+                packet.header.new_frame_rate,
+            );
+
+            // Stop if stop is set
+            if (packet.header.stop) {
+                self.is_running = false;
+                self.shared_memory.stop();
+            }
+
+            // Add the packet to the nacks
+            for (packet.nacks) |nack| {
+                _ = try self.nacks.getOrPut(self.allocator, nack);
+            }
+            self.last_packet_received = std.time.milliTimestamp();
+        }
+    }
+
+    fn sendNewPackets(self: *@This(), socket: posix.socket_t, buffer: []u8) !void {
+        // const message = "Hello Server, this is zig client";
+
+        const current_id = self.shared_memory.current_packet.load(.unordered);
+        while (self.current_id != current_id) {
+            // Try to Send Packets. If fails break
+            try self.receivePackets(socket, buffer);
+
+            const packet = self.shared_memory.getPacket(self.current_id);
+            const len = packet.serialize(buffer);
+            buffer[len] = 0;
+
+            const slice: [:0]const u8 = buffer[0..len :0];
+
+            _ = posix.send(
+                socket,
+                slice,
+                0,
+            ) catch |err| {
+                if (err == error.WouldBlock) {
+                    break;
+                } else {
+                    return err;
+                }
+            };
+            std.debug.print("Sent packet {} of size {}\n", .{ self.current_id, len });
+
+            self.current_id +%= 1;
+        }
+    }
+
+    fn sendNacks(self: *@This(), socket: posix.socket_t, buffer: []u8) !void {
+        for (self.nacks.keys()) |id| {
+            const packet = self.shared_memory.getPacket(id);
+            const len = packet.serialize(buffer);
+            _ = posix.send(
+                socket,
+                buffer[0..len],
+                0,
+            ) catch |err| {
+                if (err == error.WouldBlock) {
+                    break;
+                } else {
+                    return err;
+                }
+            };
+            _ = self.nacks.fetchSwapRemove(id);
         }
     }
 };

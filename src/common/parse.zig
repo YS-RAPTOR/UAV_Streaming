@@ -96,3 +96,15 @@ pub fn parse(Arguments: type, argument_iter: *std.process.ArgIterator) !Argument
 
     return args;
 }
+
+pub fn getAddress(address: []const u8) !struct { []const u8, u16 } {
+    const index = std.mem.indexOf(u8, address, ":");
+    if (index == null) {
+        return error.InvalidAddress;
+    }
+
+    const addr = address[0..index.?];
+    const port = address[index.? + 1 ..];
+
+    return .{ addr, try std.fmt.parseInt(u16, port, 10) };
+}

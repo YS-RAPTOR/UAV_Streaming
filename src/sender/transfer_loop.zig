@@ -1,7 +1,8 @@
 const std = @import("std");
 const posix = std.posix;
-const SharedMemory = @import("shared.zig").SharedMemory;
 const udp = @import("../common/udp.zig");
+const common = @import("../common/common.zig");
+const SharedMemory = @import("shared.zig").SharedMemory;
 
 const StopTime = 60 * 1000; // 1 minute = 60s * 1000ms
 
@@ -62,20 +63,20 @@ pub const TransferLoop = struct {
         try posix.bind(socket, &self.bind_address.any, self.bind_address.getOsSockLen());
         try posix.connect(socket, &self.send_address.any, self.send_address.getOsSockLen());
         self.shared_memory.running.store(true, .unordered);
-        std.debug.print("Starting transfer loop...\n", .{});
+        common.print("Starting transfer loop...\n", .{});
         while (!self.shared_memory.isCrashed()) {
             self.receivePackets(socket, buffer) catch |err| {
-                std.debug.print("Error receiving packets: {}\n", .{err});
+                common.print("Error receiving packets: {}\n", .{err});
                 return err;
             };
 
             self.sendNewPackets(socket, buffer) catch |err| {
-                std.debug.print("Error sending new packets: {}\n", .{err});
+                common.print("Error sending new packets: {}\n", .{err});
                 return err;
             };
 
             self.sendNacks(socket, buffer) catch |err| {
-                std.debug.print("Error sending nacks: {}\n", .{err});
+                common.print("Error sending nacks: {}\n", .{err});
                 return err;
             };
 

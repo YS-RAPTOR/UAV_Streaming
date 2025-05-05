@@ -4,7 +4,7 @@ const Crc = std.hash.crc.Crc32Iscsi;
 const common = @import("../common/common.zig");
 
 pub const UdpSenderPacket = struct {
-    pub const MAX_DATA_SIZE = 1 * 1024;
+    pub const MAX_DATA_SIZE = 1024;
     pub const Header = struct {
         id: u64,
         no_of_splits: u8,
@@ -62,8 +62,7 @@ pub const UdpSenderPacket = struct {
 
         var crc: Crc = .init();
         crc.update(header_ptr[0..header_size]);
-
-        crc.update(@ptrCast(self.data[0..]));
+        crc.update(@ptrCast(self.data[0..self.header.size]));
 
         self.header.crc = crc.final();
     }
@@ -95,6 +94,7 @@ pub const UdpSenderPacket = struct {
         @memcpy(header_ptr[0..header_size], buffer[0..header_size]);
 
         if (header_size + self.header.size > buffer.len) {
+            self.header.size = MAX_DATA_SIZE;
             return;
         }
 
@@ -124,7 +124,7 @@ pub const UdpReceiverPacket = struct {
 
         var crc: Crc = .init();
         crc.update(header_ptr[0..header_size]);
-        crc.update(@ptrCast(self.nacks[0..]));
+        crc.update(@ptrCast(self.nacks[0..self.header.no_of_nacks]));
 
         self.header.crc = crc.final();
     }
@@ -158,6 +158,7 @@ pub const UdpReceiverPacket = struct {
 
         const nack_size: usize = @sizeOf(u64) * @as(usize, @intCast(self.header.no_of_nacks));
         if (header_size + nack_size > buffer.len) {
+            self.header.no_of_nacks = MAX_NUMBER_OF_NACKS;
             return;
         }
         @memcpy(

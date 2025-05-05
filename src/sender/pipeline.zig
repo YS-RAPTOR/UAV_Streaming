@@ -96,8 +96,8 @@ const TestPipeline = struct {
     ) !void {
         defer self.frame_rate = new_frame_rate;
         defer self.resolution = new_resolution;
-        std.debug.print(
-            "New Settings: {s}@{}",
+        common.print(
+            "New Settings: {s}@{}\n",
             .{ new_resolution.getResolutionString(), @intFromEnum(new_frame_rate) },
         );
     }

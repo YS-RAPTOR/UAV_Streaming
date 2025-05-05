@@ -150,7 +150,7 @@ pub const SharedMemory = struct {
             total_size += packet.header.size;
         }
 
-        if (packets[0].header.frame_number == 100) {
+        if (packets[0].header.frame_number >= 100) {
             self.stop();
         }
 
@@ -163,9 +163,9 @@ pub const SharedMemory = struct {
     }
 
     pub inline fn stop(self: *@This()) void {
-        std.debug.print("******************************************************\n\n", .{});
-        std.debug.print("Stopping receiver", .{});
+        common.print("******************************************************\n\n", .{});
+        common.print("Stopping receiver", .{});
         self.is_stopping.store(true, .unordered);
-        std.debug.print("******************************************************\n\n", .{});
+        common.print("******************************************************\n\n", .{});
     }
 };

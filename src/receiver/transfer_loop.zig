@@ -68,23 +68,18 @@ pub const TransferLoop = struct {
         defer posix.close(socket);
 
         try posix.bind(socket, &self.bind_address.any, self.bind_address.getOsSockLen());
-        std.debug.print("Listening...\n", .{});
+        common.print("Listening...\n", .{});
 
         while (true) {
-            var start_time = std.time.milliTimestamp();
             self.receivePackets(socket, buffer) catch |err| {
-                std.debug.print("Error receiving packets: {}\n", .{err});
+                common.print("Error receiving packets: {}\n", .{err});
                 return err;
             };
-            const end_time = std.time.milliTimestamp();
-            std.debug.print("Time taken to receive packets: {} ms\n", .{end_time - start_time});
 
-            self.sendPackets(socket, buffer) catch |err| {
-                std.debug.print("Error sending packets: {}\n", .{err});
+            while (self.sendPackets(socket, buffer) catch |err| {
+                common.print("Error sending packets: {}\n", .{err});
                 return err;
-            };
-            start_time = std.time.milliTimestamp();
-            std.debug.print("Time taken to send packets: {} ms\n", .{start_time - end_time});
+            }) {}
 
             if (self.shared_memory.isStopping() and self.nacks.count() == 0) {
                 return;
@@ -115,6 +110,7 @@ pub const TransferLoop = struct {
 
             const current_time = std.time.milliTimestamp();
             if (!packet.is_valid()) {
+                common.print("Invalid packet: {}\n", .{packet.header.id});
                 continue;
             }
 
@@ -131,10 +127,11 @@ pub const TransferLoop = struct {
 
             // Remove the packet from the nacks if present
             if (self.nacks.contains(packet.header.id)) {
-                std.debug.print("Removing Nack: {}\n", .{packet.header.id});
+                common.print("Removing Nack: {}\n", .{packet.header.id});
                 _ = self.nacks.fetchSwapRemove(packet.header.id);
             } else {
                 // Add packets from current id to the received id to the nacks
+                common.print("{} - {}\n", .{ self.current_id, packet.header.id });
                 if (self.current_id != packet.header.id) {
                     const iterations = std.math.sub(u64, packet.header.id, self.current_id) catch blk: {
                         const subtraction = self.current_id - packet.header.id;
@@ -184,7 +181,7 @@ pub const TransferLoop = struct {
         }
     }
 
-    fn sendPackets(self: *@This(), socket: c_int, buffer: []u8) !void {
+    fn sendPackets(self: *@This(), socket: c_int, buffer: []u8) !bool {
         const resolution, const frame_rate = adaptiveStreaming(
             self.info_buffer.items,
             self.nacks.count(),
@@ -202,22 +199,22 @@ pub const TransferLoop = struct {
         };
 
         const current_time = std.time.milliTimestamp();
-        var iterator = self.nacks.iterator();
         var no_of_nacks: u8 = 0;
 
+        var iterator = self.nacks.iterator();
         while (iterator.next()) |entry| {
             // If greater than 2000ms add to nacks
-            if (current_time - entry.value_ptr.* > 2000) {
-                entry.value_ptr.* = current_time;
+            if (current_time - entry.value_ptr.* > 10000) {
                 if (no_of_nacks >= packet.nacks.len) {
                     break;
                 }
+                entry.value_ptr.* = current_time;
                 packet.nacks[no_of_nacks] = entry.key_ptr.*;
                 no_of_nacks += 1;
             }
         }
         if (no_of_nacks == 0) {
-            return;
+            return false;
         }
 
         packet.header.no_of_nacks = @intCast(no_of_nacks);
@@ -232,11 +229,12 @@ pub const TransferLoop = struct {
             self.send_address.getOsSockLen(),
         ) catch |err| {
             if (err == error.WouldBlock) {
-                return;
+                return false;
             } else {
                 return err;
             }
         };
+        return true;
     }
 
     inline fn insertInfo(self: *@This(), latency: i64, size: u16, timestamp: i64) void {
@@ -286,7 +284,7 @@ pub const TransferLoop = struct {
         var frame_rate: common.FrameRate = undefined;
 
         _ = average_latency;
-        // std.debug.print(
+        // common.print(
         //     "Average Latency: {d} ms/s, Average Bandwidth: {d} KB/s, Number of Nacks: {}\n",
         //     .{ average_latency, average_bandwidth, no_of_nacks },
         // );
@@ -294,7 +292,7 @@ pub const TransferLoop = struct {
         if (no_of_nacks <= 100) {
             frame_rate = common.FrameRate.@"60";
         } else {
-            frame_rate = common.FrameRate.@"60";
+            frame_rate = common.FrameRate.@"30";
         }
 
         // Resolutions_available are 2160p, 1440p, 1080p, 720p, 480p, 360p

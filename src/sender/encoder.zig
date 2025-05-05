@@ -10,25 +10,25 @@ pub const H264Codec = struct {
         var codec = ffmpeg.avcodec_find_encoder_by_name("h264_nvenc");
 
         if (codec != null) {
-            std.debug.print("Using NVENC codec\n", .{});
+            common.print("Using NVENC codec\n", .{});
             return codec;
         }
 
         codec = ffmpeg.avcodec_find_encoder_by_name("h264_amf");
         if (codec != null) {
-            std.debug.print("Using AMF codec\n", .{});
+            common.print("Using AMF codec\n", .{});
             return codec;
         }
 
         codec = ffmpeg.avcodec_find_encoder_by_name("h264_qsv");
         if (codec != null) {
-            std.debug.print("Using QSV codec\n", .{});
+            common.print("Using QSV codec\n", .{});
             return codec;
         }
 
         codec = ffmpeg.avcodec_find_encoder_by_name("h264_v4l2m2m");
         if (codec != null) {
-            std.debug.print("Using V4L2M2M codec\n", .{});
+            common.print("Using V4L2M2M codec\n", .{});
             return codec;
         }
 
@@ -37,13 +37,13 @@ pub const H264Codec = struct {
         if (codec == null) {
             return error.CodecNotFound;
         }
-        std.debug.print("Using default H264 codec\n", .{});
+        common.print("Using default H264 codec\n", .{});
         return codec;
     }
 
     pub fn init(resolution: common.Resolution, frame_rate: common.FrameRate) !@This() {
         const codec = H264Codec.findBestCodec() catch |err| {
-            std.debug.print("Error finding codec: H264\n", .{});
+            common.print("Error finding codec: H264\n", .{});
             return err;
         };
 

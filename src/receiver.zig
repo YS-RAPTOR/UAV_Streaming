@@ -19,10 +19,10 @@ const ReceiverArguments = struct {
 
     pub const default: @This() = .{
         // TODO: Change when testing
-        // .send_address = "127.0.0.1:2004",
-        // .bind_address = "127.0.0.1:2003",
-        .send_address = "127.0.0.1:2003",
-        .bind_address = "127.0.0.1:2004",
+        .send_address = "127.0.0.1:2002",
+        .bind_address = "127.0.0.1:2003",
+        // .send_address = "127.0.0.1:2003",
+        // .bind_address = "127.0.0.1:2004",
     };
 };
 
@@ -49,24 +49,24 @@ pub fn main() !void {
     defer args.deinit();
     const arguments = parse.parse(ReceiverArguments, &args) catch |err| {
         if (err == error.HelpRequested) {
-            std.debug.print(help, .{});
+            common.print(help, .{});
             return;
         }
 
-        std.debug.print("Run with --help to see available options.\n", .{});
+        common.print("Run with --help to see available options.\n", .{});
         return;
     };
 
     const send_address, const send_port = parse.getAddress(
         arguments.send_address,
     ) catch |err| {
-        std.debug.print("Invalid send address: {}\n", .{err});
+        common.print("Invalid send address: {}\n", .{err});
         return;
     };
     const bind_address, const bind_port = parse.getAddress(
         arguments.bind_address,
     ) catch |err| {
-        std.debug.print("Invalid bind address: {}\n", .{err});
+        common.print("Invalid bind address: {}\n", .{err});
         return;
     };
 
@@ -81,7 +81,7 @@ pub fn main() !void {
         send_port,
         &shared_memory,
     ) catch |err| {
-        std.debug.print("Failed to initialize transfer loop: {}\n", .{err});
+        common.print("Failed to initialize transfer loop: {}\n", .{err});
         return;
     };
     defer transfer_loop.deinit();

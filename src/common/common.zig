@@ -101,7 +101,7 @@ pub const Frame = struct {
 
     pub inline fn end(self: *@This()) void {
         if (self.unref) {
-            std.debug.print("Unref called on already unrefed frame\n", .{});
+            print("Unref called on already unrefed frame\n", .{});
             unreachable;
         }
         ffmpeg.av_frame_unref(self.frame);
@@ -139,10 +139,17 @@ pub const Packet = struct {
 
     pub inline fn end(self: *@This()) void {
         if (self.unref) {
-            std.debug.print("Unref called on already unrefed packet\n", .{});
+            print("Unref called on already unrefed packet\n", .{});
             unreachable;
         }
         ffmpeg.av_packet_unref(self.packet);
         self.unref = true;
     }
 };
+
+pub fn print(comptime fmt: []const u8, args: anytype) void {
+    const stdout = std.io.getStdOut().writer();
+    stdout.print(fmt, args) catch {
+        return;
+    };
+}

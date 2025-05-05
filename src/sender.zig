@@ -57,13 +57,23 @@ pub fn main() !void {
     defer args.deinit();
     const arguements = parse.parse(SenderArguments, &args) catch |err| {
         if (err == error.HelpRequested) {
-            std.debug.print(help, .{});
+            common.print(help, .{});
             return;
         }
 
-        std.debug.print("Run with --help to see available options.\n", .{});
+        common.print("Run with --help to see available options.\n", .{});
         return;
     };
+
+    var pl = pipeline.Pipeline.init(
+        arguements.pipeline,
+        arguements.resolution,
+        arguements.frame_rate,
+    ) catch |err| {
+        common.print("Error initializing pipeline: {}\n", .{err});
+        return;
+    };
+    defer pl.deinit();
 
     var shared_memory = SharedMemory.init(
         allocator,
@@ -71,7 +81,7 @@ pub fn main() !void {
         arguements.frame_rate,
         2,
     ) catch |err| {
-        std.debug.print("Error initializing shared memory: {}\n", .{err});
+        common.print("Error initializing shared memory: {}\n", .{err});
         return;
     };
     defer shared_memory.deinit();
@@ -79,13 +89,13 @@ pub fn main() !void {
     const send_address, const send_port = parse.getAddress(
         arguements.send_address,
     ) catch |err| {
-        std.debug.print("Invalid send address: {}\n", .{err});
+        common.print("Invalid send address: {}\n", .{err});
         return;
     };
     const bind_address, const bind_port = parse.getAddress(
         arguements.bind_address,
     ) catch |err| {
-        std.debug.print("Invalid bind address: {}\n", .{err});
+        common.print("Invalid bind address: {}\n", .{err});
         return;
     };
 
@@ -97,7 +107,7 @@ pub fn main() !void {
         send_port,
         &shared_memory,
     ) catch |err| {
-        std.debug.print("Error initializing transfer loop: {}\n", .{err});
+        common.print("Error initializing transfer loop: {}\n", .{err});
         return;
     };
     defer transfer_loop.deinit();
@@ -110,7 +120,7 @@ pub fn main() !void {
         TransferLoop.run,
         .{&transfer_loop},
     ) catch |err| {
-        std.debug.print("Error spawning thread: {}\n", .{err});
+        common.print("Error spawning thread: {}\n", .{err});
         return;
     };
 
@@ -119,24 +129,14 @@ pub fn main() !void {
 
     while (!shared_memory.isRunning()) {}
 
-    var pl = pipeline.Pipeline.init(
-        arguements.pipeline,
-        arguements.resolution,
-        arguements.frame_rate,
-    ) catch |err| {
-        std.debug.print("Error initializing pipeline: {}\n", .{err});
-        return;
-    };
-    defer pl.deinit();
-
-    std.debug.print("Starting Video Encode...\n", .{});
+    common.print("Starting Video Encode...\n", .{});
     while (shared_memory.isRunning()) {
         errdefer shared_memory.crash();
         defer count +%= 1;
 
         const settings = shared_memory.getSettings();
 
-        const should_skip = settings.frame_rate == .@"30" and count % 2 == 1;
+        const should_skip = settings.frame_rate == .@"30" and count % 2 == 0;
 
         if (!try pl.start(settings.resolution, settings.frame_rate, !should_skip)) {
             break;
@@ -173,9 +173,16 @@ pub fn main() !void {
             });
             no_of_packets += 1;
         }
+        common.print(
+            "No of packets: {}, frame number: {}\n",
+            .{ shared_memory.current_packet.load(.unordered), frame_no },
+        );
+
         std.debug.assert(no_of_packets <= 1);
 
         frame_no += 1;
+        // 15ms
+        std.Thread.sleep(15 * 1000);
     }
     thread.join();
 }

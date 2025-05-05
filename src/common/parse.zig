@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("common.zig");
 
 fn convertToKebab(comptime name: []const u8) []const u8 {
     comptime var result: []const u8 = "";
@@ -81,7 +82,7 @@ pub fn parse(Arguments: type, argument_iter: *std.process.ArgIterator) !Argument
         inline for (struct_info.fields, full_names, shorthand_names) |field, full_name, shorthand| {
             if (std.mem.eql(u8, arg, full_name) or std.mem.eql(u8, arg, shorthand)) {
                 @field(&args, field.name) = parseArgument(field.type, argument_iter.next()) catch |err| {
-                    std.debug.print("Error parsing argument {s}: {s}\n", .{ arg, @errorName(err) });
+                    std.log.info("Error parsing argument {s}: {s}\n", .{ arg, @errorName(err) });
                     return err;
                 };
                 found = true;
@@ -89,7 +90,7 @@ pub fn parse(Arguments: type, argument_iter: *std.process.ArgIterator) !Argument
             }
         }
         if (!found) {
-            std.debug.print("Unknown argument: {s}\n", .{arg});
+            common.print("Unknown argument: {s}\n", .{arg});
             return error.UnknownArgument;
         }
     }

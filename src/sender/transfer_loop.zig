@@ -94,7 +94,7 @@ pub const TransferLoop = struct {
         var other_address: posix.sockaddr = undefined;
         var other_address_len: posix.socklen_t = @sizeOf(posix.sockaddr);
 
-        while (true) {
+        for (0..100) |_| {
             const len = posix.recvfrom(
                 socket,
                 buffer,
@@ -103,7 +103,7 @@ pub const TransferLoop = struct {
                 &other_address_len,
             ) catch |err| {
                 if (err == error.WouldBlock) {
-                    break;
+                    continue;
                 } else {
                     return err;
                 }
@@ -136,6 +136,8 @@ pub const TransferLoop = struct {
 
     fn sendNewPackets(self: *@This(), socket: posix.socket_t, buffer: []u8) !void {
         const current_id = self.shared_memory.current_packet.load(.unordered);
+
+        var no_sent: usize = 0;
         while (self.current_id != current_id) {
             // Try to Send Packets. If fails break
             try self.receivePackets(socket, buffer);
@@ -159,6 +161,11 @@ pub const TransferLoop = struct {
             };
 
             self.current_id +%= 1;
+
+            if (no_sent > 1000) {
+                break;
+            }
+            no_sent += 1;
         }
     }
 

@@ -51,6 +51,12 @@ pub const TransferLoop = struct {
     pub fn deinit(self: *@This()) void {
         self.nacks.deinit(self.allocator);
         self.info_buffer.deinit(self.allocator);
+
+        for (self.packets.keys()) |k| {
+            var kp = self.packets.fetchSwapRemove(k) orelse continue;
+            kp.value.deinit(self.allocator);
+        }
+
         self.packets.deinit(self.allocator);
     }
 
@@ -76,11 +82,13 @@ pub const TransferLoop = struct {
                 return err;
             };
 
-            while (self.sendPackets(socket, buffer) catch |err| {
+            var iterator = self.nacks.iterator();
+            while (self.sendPackets(socket, buffer, &iterator) catch |err| {
                 common.print("Error sending packets: {}\n", .{err});
                 return err;
             }) {}
 
+            std.debug.print("Nacks: {}\n", .{self.nacks.count()});
             if (self.shared_memory.isStopping() and self.nacks.count() == 0) {
                 return;
             }
@@ -91,7 +99,7 @@ pub const TransferLoop = struct {
         var other_address: posix.sockaddr = undefined;
         var other_address_len: posix.socklen_t = @sizeOf(posix.sockaddr);
 
-        while (true) {
+        for (0..1000) |_| {
             const len = posix.recvfrom(
                 socket,
                 buffer,
@@ -110,7 +118,6 @@ pub const TransferLoop = struct {
 
             const current_time = std.time.milliTimestamp();
             if (!packet.is_valid()) {
-                common.print("Invalid packet: {}\n", .{packet.header.id});
                 continue;
             }
 
@@ -127,11 +134,9 @@ pub const TransferLoop = struct {
 
             // Remove the packet from the nacks if present
             if (self.nacks.contains(packet.header.id)) {
-                common.print("Removing Nack: {}\n", .{packet.header.id});
                 _ = self.nacks.fetchSwapRemove(packet.header.id);
             } else {
                 // Add packets from current id to the received id to the nacks
-                common.print("{} - {}\n", .{ self.current_id, packet.header.id });
                 if (self.current_id != packet.header.id) {
                     const iterations = std.math.sub(u64, packet.header.id, self.current_id) catch blk: {
                         const subtraction = self.current_id - packet.header.id;
@@ -143,9 +148,11 @@ pub const TransferLoop = struct {
                         }
                         break :blk 0;
                     };
-
                     for (0..iterations) |_| {
                         _ = try self.nacks.getOrPutValue(self.allocator, self.current_id, current_time);
+                        self.current_id +%= 1;
+                    }
+                    if (iterations > 0) {
                         self.current_id +%= 1;
                     }
                 } else {
@@ -181,7 +188,7 @@ pub const TransferLoop = struct {
         }
     }
 
-    fn sendPackets(self: *@This(), socket: c_int, buffer: []u8) !bool {
+    fn sendPackets(self: *@This(), socket: c_int, buffer: []u8, iterator: *@TypeOf(self.nacks).Iterator) !bool {
         const resolution, const frame_rate = adaptiveStreaming(
             self.info_buffer.items,
             self.nacks.count(),
@@ -201,10 +208,9 @@ pub const TransferLoop = struct {
         const current_time = std.time.milliTimestamp();
         var no_of_nacks: u8 = 0;
 
-        var iterator = self.nacks.iterator();
         while (iterator.next()) |entry| {
             // If greater than 2000ms add to nacks
-            if (current_time - entry.value_ptr.* > 10000) {
+            if (current_time - entry.value_ptr.* > 1000) {
                 if (no_of_nacks >= packet.nacks.len) {
                     break;
                 }

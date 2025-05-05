@@ -130,7 +130,11 @@ pub fn main() !void {
     while (!shared_memory.isRunning()) {}
 
     common.print("Starting Video Encode...\n", .{});
-    while (shared_memory.isRunning()) {
+    while (true) {
+        if (!shared_memory.isRunning()) {
+            break;
+        }
+
         errdefer shared_memory.crash();
         defer count +%= 1;
 
@@ -173,10 +177,6 @@ pub fn main() !void {
             });
             no_of_packets += 1;
         }
-        common.print(
-            "No of packets: {}, frame number: {}\n",
-            .{ shared_memory.current_packet.load(.unordered), frame_no },
-        );
 
         std.debug.assert(no_of_packets <= 1);
 

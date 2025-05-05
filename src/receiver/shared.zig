@@ -164,7 +164,7 @@ pub const SharedMemory = struct {
 
     pub inline fn stop(self: *@This()) void {
         common.print("******************************************************\n\n", .{});
-        common.print("Stopping receiver", .{});
+        common.print("Stopping receiver\n", .{});
         self.is_stopping.store(true, .unordered);
         common.print("******************************************************\n\n", .{});
     }

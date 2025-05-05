@@ -1,13 +1,90 @@
 const std = @import("std");
+const common = @import("./common/common.zig");
+const parse = @import("./common/parse.zig");
+const builtins = @import("builtin");
+const SharedMemory = @import("./receiver/shared.zig").SharedMemory;
+const TransferLoop = @import("./receiver/transfer_loop.zig").TransferLoop;
 
-pub fn main() void {
-    std.debug.print("Hello, Client!\n", .{});
-    const i: usize = 0;
+// 5 minute frame/packet_buffer (Tagged Union) buffer with player head
 
-    const f: f64 = i;
-    _ = f;
+pub fn adaptiveStreaming(average_latency: f32, average_packet_loss: f32, average_bandwidth: f32) void {
+    _ = average_latency;
+    _ = average_packet_loss;
+    _ = average_bandwidth;
 }
 
-test "First" {
-    try std.testing.expectEqual(1, 1);
+const ReceiverArguments = struct {
+    send_address: []const u8,
+    bind_address: []const u8,
+
+    pub const default: @This() = .{
+        // TODO: Change when testing
+        // .send_address = "127.0.0.1:2004",
+        // .bind_address = "127.0.0.1:2003",
+        .send_address = "127.0.0.1:2003",
+        .bind_address = "127.0.0.1:2004",
+    };
+};
+
+const help =
+    \\-h, --help                 Display this help message
+    \\-s, --send-address [addr]  Set the video address to send the video to (default: 127.0.0.1:2003)
+    \\-b, --bind-address [addr]  Set the address that binds the sender to (default:127.0.0.1:2002)
+;
+
+pub fn main() !void {
+    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+    const allocator, const is_debug = gpa: {
+        break :gpa switch (builtins.mode) {
+            .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
+            .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
+        };
+    };
+
+    defer if (is_debug) {
+        _ = debug_allocator.deinit();
+    };
+
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+    const arguments = parse.parse(ReceiverArguments, &args) catch |err| {
+        if (err == error.HelpRequested) {
+            std.debug.print(help, .{});
+            return;
+        }
+
+        std.debug.print("Run with --help to see available options.\n", .{});
+        return;
+    };
+
+    const send_address, const send_port = parse.getAddress(
+        arguments.send_address,
+    ) catch |err| {
+        std.debug.print("Invalid send address: {}\n", .{err});
+        return;
+    };
+    const bind_address, const bind_port = parse.getAddress(
+        arguments.bind_address,
+    ) catch |err| {
+        std.debug.print("Invalid bind address: {}\n", .{err});
+        return;
+    };
+
+    var shared_memory: SharedMemory = try .init(allocator);
+    defer shared_memory.deinit();
+
+    var transfer_loop = TransferLoop.init(
+        allocator,
+        bind_address,
+        bind_port,
+        send_address,
+        send_port,
+        &shared_memory,
+    ) catch |err| {
+        std.debug.print("Failed to initialize transfer loop: {}\n", .{err});
+        return;
+    };
+    defer transfer_loop.deinit();
+
+    try transfer_loop.run();
 }

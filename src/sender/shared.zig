@@ -47,7 +47,7 @@ pub const SharedMemory = struct {
                 .resolution = starting_resolution,
                 .frame_rate = starting_frame_rate,
             }),
-            .running = .init(true),
+            .running = .init(false),
             .main_thread_crash = .init(false),
         };
     }

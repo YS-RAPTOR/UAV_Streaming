@@ -13,7 +13,7 @@ pub const UdpSenderPacket = struct {
         crc: u32,
 
         is_key_frame: bool,
-        generated_timestamp: u64,
+        generated_timestamp: i64,
         resolution: common.Resolution,
         frame_rate: common.FrameRate,
         frame_number: u64,
@@ -62,7 +62,8 @@ pub const UdpSenderPacket = struct {
 
         var crc: Crc = .init();
         crc.update(header_ptr[0..header_size]);
-        crc.update(@ptrCast(self.data[0..self.header.size]));
+
+        crc.update(@ptrCast(self.data[0..]));
 
         self.header.crc = crc.final();
     }
@@ -76,6 +77,7 @@ pub const UdpSenderPacket = struct {
     pub fn serialize(self: *const @This(), buffer: []u8) usize {
         const header_ptr = @as([*]const u8, @ptrCast(&self.header));
         const header_size = @sizeOf(@This().Header);
+        std.debug.assert(header_size == 40);
 
         @memcpy(buffer[0..header_size], header_ptr[0..header_size]);
         @memcpy(buffer[header_size .. header_size + self.header.size], self.data[0..self.header.size]);
@@ -91,21 +93,28 @@ pub const UdpSenderPacket = struct {
         const header_size = @sizeOf(@This().Header);
 
         @memcpy(header_ptr[0..header_size], buffer[0..header_size]);
+
+        if (header_size + self.header.size > buffer.len) {
+            return;
+        }
+
         @memcpy(self.data[0..self.header.size], buffer[header_size .. header_size + self.header.size]);
     }
 };
 
 pub const UdpReceiverPacket = struct {
+    pub const MAX_NUMBER_OF_NACKS = 128;
     pub const Header = struct {
-        no_of_nacks: u16,
+        no_of_nacks: u8,
         new_resolution: common.Resolution,
         new_frame_rate: common.FrameRate,
         stop: bool,
         crc: u32,
+        // _padding: [4]u8 = .{ 0, 0, 0, 0 },
     };
 
     header: Header,
-    nacks: []u64,
+    nacks: [MAX_NUMBER_OF_NACKS]u64,
 
     pub fn initializeCrc(self: *@This()) void {
         self.header.crc = 0;
@@ -115,7 +124,7 @@ pub const UdpReceiverPacket = struct {
 
         var crc: Crc = .init();
         crc.update(header_ptr[0..header_size]);
-        crc.update(@ptrCast(self.nacks));
+        crc.update(@ptrCast(self.nacks[0..]));
 
         self.header.crc = crc.final();
     }
@@ -130,9 +139,13 @@ pub const UdpReceiverPacket = struct {
         const header_ptr = @as([*]const u8, @ptrCast(&self.header));
         const header_size = @sizeOf(@This().Header);
 
+        const nack_size: usize = @sizeOf(u64) * @as(usize, @intCast(self.header.no_of_nacks));
         @memcpy(buffer[0..header_size], header_ptr[0..header_size]);
-        @memcpy(buffer[header_size .. header_size + self.header.no_of_nacks * @sizeOf(u64)], self.nacks[0..self.header.no_of_nacks]);
-        return header_size + self.header.no_of_nacks * @sizeOf(u64);
+        @memcpy(
+            buffer[header_size .. header_size + nack_size],
+            @as([]const u8, @ptrCast(self.nacks[0..self.header.no_of_nacks])),
+        );
+        return header_size + nack_size;
     }
 
     pub fn deserialize(
@@ -142,9 +155,14 @@ pub const UdpReceiverPacket = struct {
         const header_ptr = @as([*]u8, @ptrCast(&self.header));
         const header_size = @sizeOf(@This().Header);
         @memcpy(header_ptr[0..header_size], buffer[0..header_size]);
-        self.nacks = @alignCast(std.mem.bytesAsSlice(
-            u64,
-            buffer[header_size .. header_size + self.header.no_of_nacks * @sizeOf(u64)],
-        ));
+
+        const nack_size: usize = @sizeOf(u64) * @as(usize, @intCast(self.header.no_of_nacks));
+        if (header_size + nack_size > buffer.len) {
+            return;
+        }
+        @memcpy(
+            @as([]u8, @ptrCast(self.nacks[0..self.header.no_of_nacks])),
+            buffer[header_size .. header_size + nack_size],
+        );
     }
 };

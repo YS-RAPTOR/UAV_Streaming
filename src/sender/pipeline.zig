@@ -37,7 +37,7 @@ pub const Pipeline = union(SupportedPipelines) {
         }
     }
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: *@This()) void {
         switch (self.*) {
             inline else => |*p| p.deinit(),
         }

@@ -18,12 +18,12 @@ const SenderArguments = struct {
 
     pub const default: SenderArguments = .{
         .resolution = .@"2160p",
-        .frame_rate = .@"30",
+        .frame_rate = .@"60",
         // TODO: Change to Camera after testing
         .pipeline = .Test,
         .device = "/dev/video0",
         .send_address = "127.0.0.1:2003",
-        .bind_address = "127.0.0.1:2004",
+        .bind_address = "127.0.0.1:2002",
     };
 };
 
@@ -65,15 +65,6 @@ pub fn main() !void {
         return;
     };
 
-    var pl = pipeline.Pipeline.init(
-        arguements.pipeline,
-        arguements.resolution,
-        arguements.frame_rate,
-    ) catch |err| {
-        std.debug.print("Error initializing pipeline: {}\n", .{err});
-        return;
-    };
-
     var shared_memory = SharedMemory.init(
         allocator,
         arguements.resolution,
@@ -109,6 +100,7 @@ pub fn main() !void {
         std.debug.print("Error initializing transfer loop: {}\n", .{err});
         return;
     };
+    defer transfer_loop.deinit();
 
     const thread = std.Thread.spawn(
         .{
@@ -122,10 +114,22 @@ pub fn main() !void {
         return;
     };
 
-    const start_time = std.time.milliTimestamp();
     var count: u32 = 0;
     var frame_no: u64 = 0;
 
+    while (!shared_memory.isRunning()) {}
+
+    var pl = pipeline.Pipeline.init(
+        arguements.pipeline,
+        arguements.resolution,
+        arguements.frame_rate,
+    ) catch |err| {
+        std.debug.print("Error initializing pipeline: {}\n", .{err});
+        return;
+    };
+    defer pl.deinit();
+
+    std.debug.print("Starting Video Encode...\n", .{});
     while (shared_memory.isRunning()) {
         errdefer shared_memory.crash();
         defer count +%= 1;
@@ -139,10 +143,10 @@ pub fn main() !void {
         }
         defer pl.end();
 
-        if (count > 1000) {
-            shared_memory.crash();
-            break;
-        }
+        // if (count > 100) {
+        //     shared_memory.crash();
+        //     break;
+        // }
 
         if (should_skip) {
             continue;
@@ -162,7 +166,7 @@ pub fn main() !void {
                 .crc = 0,
 
                 .is_key_frame = (packet.flags & ffmpeg.AV_PKT_FLAG_KEY) != 0,
-                .generated_timestamp = @intCast(std.time.milliTimestamp() - start_time),
+                .generated_timestamp = std.time.milliTimestamp(),
                 .resolution = settings.resolution,
                 .frame_rate = settings.frame_rate,
                 .frame_number = frame_no,

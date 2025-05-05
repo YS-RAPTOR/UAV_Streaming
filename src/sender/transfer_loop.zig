@@ -47,8 +47,6 @@ pub const TransferLoop = struct {
 
     pub fn run(self: *@This()) !void {
         defer self.shared_memory.stop();
-        std.debug.print("Starting transfer loop...\n", .{});
-
         var array: std.ArrayListUnmanaged(u8) = try .initCapacity(self.allocator, 70_000);
         array.appendNTimesAssumeCapacity(0, 70_000);
         defer array.deinit(self.allocator);
@@ -63,9 +61,23 @@ pub const TransferLoop = struct {
 
         try posix.bind(socket, &self.bind_address.any, self.bind_address.getOsSockLen());
         try posix.connect(socket, &self.send_address.any, self.send_address.getOsSockLen());
-
+        self.shared_memory.running.store(true, .unordered);
+        std.debug.print("Starting transfer loop...\n", .{});
         while (!self.shared_memory.isCrashed()) {
-            try self.sendNewPackets(socket, buffer);
+            self.receivePackets(socket, buffer) catch |err| {
+                std.debug.print("Error receiving packets: {}\n", .{err});
+                return err;
+            };
+
+            self.sendNewPackets(socket, buffer) catch |err| {
+                std.debug.print("Error sending new packets: {}\n", .{err});
+                return err;
+            };
+
+            self.sendNacks(socket, buffer) catch |err| {
+                std.debug.print("Error sending nacks: {}\n", .{err});
+                return err;
+            };
 
             // Have to keep acknowledging nacks
             if (!self.is_running) {
@@ -122,8 +134,6 @@ pub const TransferLoop = struct {
     }
 
     fn sendNewPackets(self: *@This(), socket: posix.socket_t, buffer: []u8) !void {
-        // const message = "Hello Server, this is zig client";
-
         const current_id = self.shared_memory.current_packet.load(.unordered);
         while (self.current_id != current_id) {
             // Try to Send Packets. If fails break
@@ -131,13 +141,13 @@ pub const TransferLoop = struct {
 
             const packet = self.shared_memory.getPacket(self.current_id);
             const len = packet.serialize(buffer);
-            buffer[len] = 0;
 
-            const slice: [:0]const u8 = buffer[0..len :0];
-
+            if (len > 40 + 1024) {
+                unreachable;
+            }
             _ = posix.send(
                 socket,
-                slice,
+                buffer[0..len],
                 0,
             ) catch |err| {
                 if (err == error.WouldBlock) {
@@ -155,18 +165,23 @@ pub const TransferLoop = struct {
         for (self.nacks.keys()) |id| {
             const packet = self.shared_memory.getPacket(id);
             const len = packet.serialize(buffer);
+
+            if (len > 40 + 1024) {
+                unreachable;
+            }
+
             _ = posix.send(
                 socket,
                 buffer[0..len],
                 0,
             ) catch |err| {
                 if (err == error.WouldBlock) {
-                    break;
+                    return;
                 } else {
                     return err;
                 }
             };
-            _ = self.nacks.fetchSwapRemove(id);
         }
+        self.nacks.clearRetainingCapacity();
     }
 };

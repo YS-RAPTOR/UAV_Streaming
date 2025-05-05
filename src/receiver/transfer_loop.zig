@@ -13,6 +13,8 @@ pub const TransferLoop = struct {
     current_id: u64,
 
     packets: std.AutoArrayHashMapUnmanaged(u64, std.ArrayListUnmanaged(udp.UdpSenderPacket)),
+    already_received: std.ArrayListUnmanaged(bool),
+    hash_offset: u64,
 
     shared_memory: *SharedMemory,
 
@@ -35,6 +37,15 @@ pub const TransferLoop = struct {
         var info_buffer = try std.ArrayListUnmanaged(Info).initCapacity(alloc, 1000);
         info_buffer.appendNTimesAssumeCapacity(.{ .latency = 0, .size = 0, .timestamp = 0 }, 1000);
 
+        var already_received = try std.ArrayListUnmanaged(bool).initCapacity(
+            alloc,
+            shared_mem.frame_packet_buffer.array.items.len,
+        );
+        already_received.appendNTimesAssumeCapacity(
+            false,
+            shared_mem.frame_packet_buffer.array.items.len,
+        );
+
         return .{
             .allocator = alloc,
             .bind_address = try std.net.Address.resolveIp(bind_address, bind_port),
@@ -45,19 +56,16 @@ pub const TransferLoop = struct {
             .info_buffer = info_buffer,
             .info_index = 0,
             .packets = .empty,
+            .already_received = already_received,
+            .hash_offset = shared_mem.frame_packet_buffer.hash_offset,
         };
     }
 
     pub fn deinit(self: *@This()) void {
         self.nacks.deinit(self.allocator);
         self.info_buffer.deinit(self.allocator);
-
-        for (self.packets.keys()) |k| {
-            var kp = self.packets.fetchSwapRemove(k) orelse continue;
-            kp.value.deinit(self.allocator);
-        }
-
         self.packets.deinit(self.allocator);
+        self.already_received.deinit(self.allocator);
     }
 
     pub fn run(self: *@This()) !void {
@@ -88,11 +96,24 @@ pub const TransferLoop = struct {
                 return err;
             }) {}
 
-            std.debug.print("Nacks: {}\n", .{self.nacks.count()});
+            // std.debug.print("Nacks: {}\n", .{self.nacks.count()});
             if (self.shared_memory.isStopping() and self.nacks.count() == 0) {
                 return;
             }
         }
+    }
+
+    inline fn getSubtractionOfIds(self: *@This(), id: u64) u64 {
+        return std.math.sub(u64, id, self.current_id) catch {
+            const subtraction = self.current_id - id;
+            const half = std.math.maxInt(u64) / 2;
+            if (subtraction > half) {
+                const packet_offsetted = id +% half;
+                const current_id_offsetted = self.current_id +% half;
+                return packet_offsetted - current_id_offsetted - 1;
+            }
+            return 0;
+        };
     }
 
     fn receivePackets(self: *@This(), socket: c_int, buffer: []u8) !void {
@@ -138,16 +159,7 @@ pub const TransferLoop = struct {
             } else {
                 // Add packets from current id to the received id to the nacks
                 if (self.current_id != packet.header.id) {
-                    const iterations = std.math.sub(u64, packet.header.id, self.current_id) catch blk: {
-                        const subtraction = self.current_id - packet.header.id;
-                        const half = std.math.maxInt(u64) / 2;
-                        if (subtraction > half) {
-                            const packet_offsetted = packet.header.id +% half;
-                            const current_id_offsetted = self.current_id +% half;
-                            break :blk packet_offsetted - current_id_offsetted - 1;
-                        }
-                        break :blk 0;
-                    };
+                    const iterations = self.getSubtractionOfIds(packet.header.id);
                     for (0..iterations) |_| {
                         _ = try self.nacks.getOrPutValue(self.allocator, self.current_id, current_time);
                         self.current_id +%= 1;
@@ -163,10 +175,15 @@ pub const TransferLoop = struct {
             // Store the packet in the buffer
 
             const parent_id = packet.header.id - packet.header.parent_offset;
+            if (self.hasReceived(parent_id)) {
+                continue;
+            }
+
             var results = try self.packets.getOrPut(
                 self.allocator,
                 parent_id,
             );
+
             if (results.found_existing) {
                 @memcpy(
                     @as([*]u8, @ptrCast(&results.value_ptr.items[packet.header.parent_offset]))[0..@sizeOf(udp.UdpSenderPacket)],
@@ -184,8 +201,24 @@ pub const TransferLoop = struct {
             if (try self.shared_memory.addPacket(results.value_ptr.items)) {
                 var array = self.packets.fetchSwapRemove(parent_id).?;
                 array.value.deinit(self.allocator);
+                self.setReceived(parent_id);
             }
         }
+    }
+
+    pub fn hasReceived(self: *@This(), parent_id: u64) bool {
+        const index = (parent_id + self.hash_offset) % self.already_received.items.len;
+        return self.already_received.items[index];
+    }
+
+    pub fn setReceived(self: *@This(), parent_id: u64) void {
+        const index = (parent_id + self.hash_offset) % self.already_received.items.len;
+        var half = index + self.already_received.items.len / 2;
+        half = half % self.already_received.items.len;
+
+        std.debug.assert(half != index);
+        self.already_received.items[index] = true;
+        self.already_received.items[half] = false;
     }
 
     fn sendPackets(self: *@This(), socket: c_int, buffer: []u8, iterator: *@TypeOf(self.nacks).Iterator) !bool {
@@ -209,7 +242,7 @@ pub const TransferLoop = struct {
         var no_of_nacks: u8 = 0;
 
         while (iterator.next()) |entry| {
-            // If greater than 2000ms add to nacks
+            // If greater than 1000ms add to nacks
             if (current_time - entry.value_ptr.* > 1000) {
                 if (no_of_nacks >= packet.nacks.len) {
                     break;

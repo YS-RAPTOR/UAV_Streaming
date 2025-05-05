@@ -104,7 +104,7 @@ const FramePacketBuffer = struct {
         self.array.deinit(allocator);
     }
 
-    fn getIndex(self: *@This(), id: usize) usize {
+    pub fn getIndex(self: *@This(), id: usize) usize {
         // Get the frame packet at the given index
         return (id + self.hash_offset) % self.array.items.len;
     }

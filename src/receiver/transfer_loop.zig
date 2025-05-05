@@ -96,7 +96,6 @@ pub const TransferLoop = struct {
                 return err;
             }) {}
 
-            // std.debug.print("Nacks: {}\n", .{self.nacks.count()});
             if (self.shared_memory.isStopping() and self.nacks.count() == 0) {
                 return;
             }

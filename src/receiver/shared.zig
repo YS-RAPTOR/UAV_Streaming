@@ -150,7 +150,7 @@ pub const SharedMemory = struct {
             total_size += packet.header.size;
         }
 
-        if (packets[0].header.frame_number >= 100) {
+        if (packets[0].header.frame_number >= 5 * 60 * 60) {
             self.stop();
         }
 

@@ -10,7 +10,7 @@ pub const MP4 = struct {
     packet: common.Packet,
 
     pub fn init(filename: []const u8, resolution: common.Resolution, frame_rate: common.FrameRate) !@This() {
-        const enc: encoder.H264Codec = .init(resolution, frame_rate);
+        const enc: encoder.H264Codec = try .init(resolution, frame_rate);
 
         var context: [*c]ffmpeg.AVFormatContext = null;
         var ret = ffmpeg.avformat_alloc_output_context2(

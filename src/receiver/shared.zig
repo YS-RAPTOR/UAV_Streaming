@@ -3,7 +3,7 @@ const udp = @import("../common/udp.zig");
 const common = @import("../common/common.zig");
 const ffmpeg = @import("ffmpeg");
 
-const FramePacket = struct {
+pub const FramePacket = struct {
     frame_rate: common.FrameRate,
     resolution: common.Resolution,
     timestamp: i64,
@@ -65,7 +65,8 @@ const FramePacket = struct {
         }
     }
 };
-const FramePacketBuffer = struct {
+
+pub const FramePacketBuffer = struct {
     hash_offset: u64,
     array: std.ArrayListUnmanaged(FramePacket),
 
@@ -115,7 +116,7 @@ const FramePacketBuffer = struct {
     pub fn getFramePacket(self: *@This(), id: u64) ?FramePacket {
         // Get the frame packet at the given index
         const index = self.getIndex(id);
-        const packet = self.array.items[index];
+        var packet = self.array.items[index];
 
         if (!packet.mutex.tryLock()) {
             return null;
@@ -172,7 +173,7 @@ pub const SharedMemory = struct {
             try self.key_frames.append(self.allocator, packets[0].header.frame_number);
         }
 
-        _ = self.no_of_frames_received.fetchAdd(1, .unordered);
+        _ = self.no_of_frames_received.fetchAdd(1, .acq_rel);
         return true;
     }
 

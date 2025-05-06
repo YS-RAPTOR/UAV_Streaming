@@ -4,6 +4,7 @@ const parse = @import("./common/parse.zig");
 const builtins = @import("builtin");
 const SharedMemory = @import("./receiver/shared.zig").SharedMemory;
 const TransferLoop = @import("./receiver/transfer_loop.zig").TransferLoop;
+const DecoderLoop = @import("./receiver/decoder_loop.zig").DecoderLoop;
 
 const ReceiverArguments = struct {
     send_address: []const u8,
@@ -78,5 +79,26 @@ pub fn main() !void {
     };
     defer transfer_loop.deinit();
 
+    var decoder_loop = DecoderLoop.init(
+        &shared_memory,
+    ) catch |err| {
+        common.print("Failed to initialize decoder loop: {}\n", .{err});
+        return;
+    };
+    defer decoder_loop.deinit();
+
+    const thread = std.Thread.spawn(
+        .{
+            .allocator = allocator,
+            .stack_size = 16 * 1024 * 1024,
+        },
+        DecoderLoop.run,
+        .{&decoder_loop},
+    ) catch |err| {
+        common.print("Error spawning thread: {}\n", .{err});
+        return;
+    };
+
     try transfer_loop.run();
+    thread.join();
 }

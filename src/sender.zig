@@ -19,7 +19,7 @@ const SenderArguments = struct {
     pub const default: SenderArguments = .{
         .resolution = .@"2160p",
         .frame_rate = .@"60",
-        // TODO: Change to Camera after testing
+        // TEST: Change to Camera after testing
         .pipeline = .Test,
         .device = "/dev/video0",
         .send_address = "127.0.0.1:2003",
@@ -138,11 +138,14 @@ pub fn main() !void {
         errdefer shared_memory.crash();
         defer count +%= 1;
 
-        const settings = shared_memory.getSettings();
+        const resolution, const frame_rate = blk: {
+            const s = shared_memory.getSettings();
+            try pl.changeSettings(s.resolution, s.frame_rate);
+            break :blk pl.getSettings();
+        };
 
-        const should_skip = settings.frame_rate == .@"30" and count % 2 == 0;
-
-        if (!try pl.start(settings.resolution, settings.frame_rate, !should_skip)) {
+        const should_skip = frame_rate == .@"30" and count % 2 == 0;
+        if (!try pl.start(!should_skip)) {
             break;
         }
         defer pl.end();
@@ -171,8 +174,8 @@ pub fn main() !void {
 
                 .is_key_frame = (packet.flags & ffmpeg.AV_PKT_FLAG_KEY) != 0,
                 .generated_timestamp = std.time.milliTimestamp(),
-                .resolution = settings.resolution,
-                .frame_rate = settings.frame_rate,
+                .resolution = resolution,
+                .frame_rate = frame_rate,
                 .frame_number = frame_no,
             });
             no_of_packets += 1;

@@ -11,7 +11,7 @@ const ReceiverArguments = struct {
     bind_address: []const u8,
 
     pub const default: @This() = .{
-        // TODO: Change when testing
+        // TEST: Change when testing
         // .send_address = "127.0.0.1:2002",
         // .bind_address = "127.0.0.1:2003",
         .send_address = "127.0.0.1:2003",

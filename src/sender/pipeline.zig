@@ -31,9 +31,9 @@ pub const Pipeline = union(SupportedPipelines) {
         }
     }
 
-    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate, submit: bool) !bool {
+    pub fn start(self: *@This(), submit: bool) !bool {
         switch (self.*) {
-            inline else => |*p| return try p.start(resolution, frame_rate, submit),
+            inline else => |*p| return try p.start(submit),
         }
     }
 
@@ -52,6 +52,22 @@ pub const Pipeline = union(SupportedPipelines) {
     pub fn end(self: *@This()) void {
         switch (self.*) {
             inline else => |*p| p.end(),
+        }
+    }
+
+    pub fn changeSettings(
+        self: *@This(),
+        new_resolution: common.Resolution,
+        new_frame_rate: common.FrameRate,
+    ) !void {
+        switch (self.*) {
+            inline else => |*p| return try p.changeSettings(new_resolution, new_frame_rate),
+        }
+    }
+
+    pub fn getSettings(self: *@This()) struct { common.Resolution, common.FrameRate } {
+        switch (self.*) {
+            inline else => |*p| return p.getSettings(),
         }
     }
 };
@@ -90,10 +106,14 @@ const TestPipeline = struct {
     }
 
     fn changeSettings(
-        self: *TestPipeline,
+        self: *@This(),
         new_resolution: common.Resolution,
         new_frame_rate: common.FrameRate,
     ) !void {
+        if (new_resolution == self.resolution or new_frame_rate == self.frame_rate) {
+            return;
+        }
+
         defer self.frame_rate = new_frame_rate;
         defer self.resolution = new_resolution;
         // TODO: Change the code to Work.
@@ -103,20 +123,16 @@ const TestPipeline = struct {
         );
     }
 
-    fn deinit(self: *TestPipeline) void {
+    fn deinit(self: *@This()) void {
         self.source.deinit();
         self.encoder.deinit();
         self.packet.deinit();
         self.frame.deinit();
     }
 
-    fn start(self: *TestPipeline, resolution: common.Resolution, frame_rate: common.FrameRate, submit: bool) !bool {
+    fn start(self: *@This(), submit: bool) !bool {
         if (self.started) {
             unreachable;
-        }
-
-        if (resolution != self.resolution or frame_rate != self.frame_rate) {
-            try self.changeSettings(resolution, frame_rate);
         }
 
         self.started = true;
@@ -136,7 +152,7 @@ const TestPipeline = struct {
         return true;
     }
 
-    fn getPacket(self: *TestPipeline) !?*Packet {
+    fn getPacket(self: *@This()) !?*Packet {
         if (!self.started) {
             unreachable;
         }
@@ -150,13 +166,17 @@ const TestPipeline = struct {
         return p;
     }
 
-    fn end(self: *TestPipeline) void {
+    fn end(self: *@This()) void {
         if (!self.started) {
             unreachable;
         }
         self.frame.end();
         self.packet.end();
         self.started = false;
+    }
+
+    fn getSettings(self: *@This()) struct { common.Resolution, common.FrameRate } {
+        return .{ self.resolution, self.frame_rate };
     }
 };
 
@@ -171,10 +191,8 @@ const EncodedCameraPipeline = struct {
         _ = self;
     }
 
-    pub fn start(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate, submit: bool) !bool {
+    pub fn start(self: *@This(), submit: bool) !bool {
         _ = self;
-        _ = resolution;
-        _ = frame_rate;
         _ = submit;
         return false;
     }
@@ -186,5 +204,20 @@ const EncodedCameraPipeline = struct {
 
     fn end(self: *@This()) void {
         _ = self;
+    }
+
+    fn changeSettings(
+        self: *@This(),
+        new_resolution: common.Resolution,
+        new_frame_rate: common.FrameRate,
+    ) !void {
+        _ = self;
+        _ = new_resolution;
+        _ = new_frame_rate;
+    }
+
+    fn getSettings(self: *@This()) struct { common.Resolution, common.FrameRate } {
+        _ = self;
+        return .{ .@"2160p", .@"60" };
     }
 };

@@ -32,7 +32,7 @@ const Decoder = struct {
 
     pub fn deinit(self: *@This()) void {
         // TODO: Add decoder deinit
-        _ = self;
+        self.png.deinit();
     }
 
     pub fn decode(self: *@This()) !void {
@@ -55,12 +55,14 @@ const Decoder = struct {
             self.free();
             return;
         }
+        var packet_data = packet.packetFrame.Packet;
+        defer ffmpeg.av_packet_free(@ptrCast(&packet_data));
 
         if (reintialize) {
             try self.reinitialize(packet);
         }
 
-        // Decode the image and write it to the shared memory.
+        // TODO: Decode the image and write it to the shared memory.
 
         // Write the image to a file.
         var filename: [255]u8 = undefined;

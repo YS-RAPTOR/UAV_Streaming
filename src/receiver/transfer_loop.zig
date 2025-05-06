@@ -285,9 +285,7 @@ pub const TransferLoop = struct {
         self.info_index %= self.info_buffer.items.len;
     }
 
-    fn adaptiveStreaming(info_buffer: []Info, no_of_nacks: usize) struct { common.Resolution, common.FrameRate } {
-
-        // TODO: Fix this code.
+    fn findBandwidthAndLatency(info_buffer: []Info) ?struct { f32, f32 } {
         var total_latency: i64 = 0;
         var total_size: u32 = 0;
         var no_of_packets: u32 = 0;
@@ -308,45 +306,54 @@ pub const TransferLoop = struct {
         }
 
         if (no_of_packets != info_buffer.len) {
-            return .{
-                common.Resolution.@"2160p",
-                common.FrameRate.@"60",
-            };
+            return null;
         }
 
         const time_difference: f32 = @floatFromInt(largest_time - smallest_time);
         const average_latency: f32 = @as(f32, @floatFromInt(total_latency)) / @as(f32, @floatFromInt(no_of_packets)); // Milliseconds
-        const average_bandwidth: f32 = (@as(f32, @floatFromInt(total_size)) / (time_difference / 1000)) / (1024); // KilloBytes/s
+        const bandwidth: f32 = (@as(f32, @floatFromInt(total_size)) / (time_difference / 1000)) / (1024); // KilloBytes/s
 
+        return .{ average_latency, bandwidth };
+    }
+
+    fn adaptiveStreaming(info_buffer: []Info, no_of_nacks: usize) struct { common.Resolution, common.FrameRate } {
+        const average_latency, const bandwidth = findBandwidthAndLatency(info_buffer) orelse {
+            return .{ common.Resolution.@"2160p", common.FrameRate.@"60" };
+        };
+
+        // TODO: Make code better.
         var resolution: common.Resolution = undefined;
         var frame_rate: common.FrameRate = undefined;
 
-        _ = average_latency;
-        // common.print(
-        //     "Average Latency: {d} ms/s, Average Bandwidth: {d} KB/s, Number of Nacks: {}\n",
-        //     .{ average_latency, average_bandwidth, no_of_nacks },
-        // );
-
-        if (no_of_nacks <= 100) {
+        if (no_of_nacks <= 150) {
             frame_rate = common.FrameRate.@"60";
         } else {
             frame_rate = common.FrameRate.@"30";
         }
 
         // Resolutions_available are 2160p, 1440p, 1080p, 720p, 480p, 360p
-        if (average_bandwidth > 1000) {
+        if (bandwidth > 1000) {
             resolution = common.Resolution.@"2160p";
-        } else if (average_bandwidth > 500) {
+        } else if (bandwidth > 500) {
             resolution = common.Resolution.@"1440p";
-        } else if (average_bandwidth > 250) {
+        } else if (bandwidth > 250) {
             resolution = common.Resolution.@"1080p";
-        } else if (average_bandwidth > 100) {
+        } else if (bandwidth > 100) {
             resolution = common.Resolution.@"720p";
-        } else if (average_bandwidth > 50) {
+        } else if (bandwidth > 50) {
             resolution = common.Resolution.@"480p";
         } else {
             resolution = common.Resolution.@"360p";
         }
+
+        if (average_latency > 50) {
+            frame_rate = common.FrameRate.@"30";
+        }
+
+        common.print(
+            "Average Latency: {}, Bandwidth: {}, No of Nacks: {}, Resolution: {s}, FrameRate: {}",
+            .{ average_latency, bandwidth, no_of_nacks, resolution.getResolutionString(), @intFromEnum(frame_rate) },
+        );
 
         return .{ resolution, frame_rate };
     }

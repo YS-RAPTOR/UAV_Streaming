@@ -102,19 +102,6 @@ pub const TransferLoop = struct {
         }
     }
 
-    inline fn getSubtractionOfIds(self: *@This(), id: u64) u64 {
-        return std.math.sub(u64, id, self.current_id) catch {
-            const subtraction = self.current_id - id;
-            const half = std.math.maxInt(u64) / 2;
-            if (subtraction > half) {
-                const packet_offsetted = id +% half;
-                const current_id_offsetted = self.current_id +% half;
-                return packet_offsetted - current_id_offsetted - 1;
-            }
-            return 0;
-        };
-    }
-
     fn receivePackets(self: *@This(), socket: c_int, buffer: []u8) !void {
         var other_address: posix.sockaddr = undefined;
         var other_address_len: posix.socklen_t = @sizeOf(posix.sockaddr);
@@ -158,7 +145,7 @@ pub const TransferLoop = struct {
             } else {
                 // Add packets from current id to the received id to the nacks
                 if (self.current_id != packet.header.id) {
-                    const iterations = self.getSubtractionOfIds(packet.header.id);
+                    const iterations = common.wrappedDifference(self.current_id, packet.header.id);
                     for (0..iterations) |_| {
                         _ = try self.nacks.getOrPutValue(self.allocator, self.current_id, current_time);
                         self.current_id +%= 1;
@@ -173,10 +160,10 @@ pub const TransferLoop = struct {
 
             // Store the packet in the buffer
 
-            const parent_id = packet.header.id - packet.header.parent_offset;
-            if (self.hasReceived(parent_id)) {
+            if (self.hasReceived(packet.header.frame_number)) {
                 continue;
             }
+            const parent_id = packet.header.id - packet.header.parent_offset;
 
             var results = try self.packets.getOrPut(
                 self.allocator,
@@ -200,7 +187,7 @@ pub const TransferLoop = struct {
             if (try self.shared_memory.addPacket(results.value_ptr.items)) {
                 var array = self.packets.fetchSwapRemove(parent_id).?;
                 array.value.deinit(self.allocator);
-                self.setReceived(parent_id);
+                self.setReceived(packet.header.frame_number);
             }
         }
     }

@@ -8,7 +8,7 @@ const FramePacket = struct {
     resolution: common.Resolution,
     timestamp: i64,
     is_key_frame: bool,
-    ready: std.atomic.Value(bool),
+    mutex: std.Thread.Mutex,
 
     packetFrame: union(enum) {
         Packet: *ffmpeg.AVPacket,
@@ -22,12 +22,12 @@ const FramePacket = struct {
         .timestamp = 0,
         .is_key_frame = false,
         .packetFrame = .None,
-        .ready = .init(true),
+        .mutex = .{},
     };
 
     fn init(self: *@This(), packet: udp.UdpSenderPacket, data: []u8) !void {
-        self.ready.store(false, .unordered);
-        defer self.ready.store(true, .unordered);
+        self.mutex.lock();
+        defer self.mutex.unlock();
 
         if (self.packetFrame == .Frame) {
             ffmpeg.av_frame_free(@ptrCast(&self.packetFrame.Frame));
@@ -55,16 +55,6 @@ const FramePacket = struct {
         if (self.is_key_frame) {
             self.packetFrame.Packet.flags |= ffmpeg.AV_PKT_FLAG_KEY;
         }
-    }
-
-    fn decode(self: *@This()) !void {
-        const is_ready = self.ready.load(.unordered);
-        if (!is_ready) {
-            return;
-        }
-        // Decode the packets into a frame
-
-        std.debug.assert(self.packetFrame == .Packet);
     }
 
     fn deinit(self: *@This()) void {
@@ -104,7 +94,7 @@ const FramePacketBuffer = struct {
         self.array.deinit(allocator);
     }
 
-    pub fn getIndex(self: *@This(), id: usize) usize {
+    fn getIndex(self: *@This(), id: u64) usize {
         // Get the frame packet at the given index
         return (id + self.hash_offset) % self.array.items.len;
     }
@@ -121,18 +111,37 @@ const FramePacketBuffer = struct {
         const index = self.getIndex(packets[0].header.frame_number);
         try self.array.items[index].init(packets[0], buffer);
     }
+
+    pub fn getFramePacket(self: *@This(), id: u64) ?FramePacket {
+        // Get the frame packet at the given index
+        const index = self.getIndex(id);
+        const packet = self.array.items[index];
+
+        if (!packet.mutex.tryLock()) {
+            return null;
+        }
+
+        return packet;
+    }
 };
 
 pub const SharedMemory = struct {
     is_stopping: std.atomic.Value(bool),
     frame_packet_buffer: FramePacketBuffer,
     allocator: std.mem.Allocator,
+    no_of_frames_received: std.atomic.Value(u64),
+
+    key_frames: std.ArrayListUnmanaged(u64),
+    key_frames_mutex: std.Thread.Mutex,
 
     pub inline fn init(allocator: std.mem.Allocator) !SharedMemory {
         return SharedMemory{
             .is_stopping = std.atomic.Value(bool).init(false),
             .frame_packet_buffer = try .init(allocator, 5),
             .allocator = allocator,
+            .key_frames = .empty,
+            .key_frames_mutex = .{},
+            .no_of_frames_received = .init(0),
         };
     }
 
@@ -155,6 +164,15 @@ pub const SharedMemory = struct {
         }
 
         try self.frame_packet_buffer.addPacket(packets, total_size);
+
+        if (packets[0].header.is_key_frame) {
+            self.key_frames_mutex.lock();
+            defer self.key_frames_mutex.unlock();
+
+            try self.key_frames.append(self.allocator, packets[0].header.frame_number);
+        }
+
+        _ = self.no_of_frames_received.fetchAdd(1, .unordered);
         return true;
     }
 
@@ -163,9 +181,6 @@ pub const SharedMemory = struct {
     }
 
     pub inline fn stop(self: *@This()) void {
-        common.print("******************************************************\n\n", .{});
-        common.print("Stopping receiver\n", .{});
         self.is_stopping.store(true, .unordered);
-        common.print("******************************************************\n\n", .{});
     }
 };

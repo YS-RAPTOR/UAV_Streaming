@@ -35,6 +35,51 @@ pub const Resolution = enum(u16) {
 pub const FrameRate = enum(u8) {
     @"30" = 30,
     @"60" = 60,
+
+    pub fn getFrameTime(self: *@This(), playback_speed: PlayBackSpeed) i64 {
+        switch (playback_speed) {
+            .normal => {
+                switch (self.*) {
+                    .@"30" => return 33,
+                    .@"60" => return 16,
+                }
+            },
+            .faster => {
+                switch (self.*) {
+                    .@"30" => return 22,
+                    .@"60" => return 10,
+                }
+            },
+            .fastest => {
+                switch (self.*) {
+                    .@"30" => return 16,
+                    .@"60" => return 8,
+                }
+            },
+        }
+    }
+};
+
+pub const PlayBackSpeed = enum {
+    normal,
+    faster,
+    fastest,
+
+    pub fn increment(self: *@This()) void {
+        switch (self.*) {
+            .normal => |_| self = .faster,
+            .faster => |_| self = .fastest,
+            .fastest => |_| self = .normal,
+        }
+    }
+
+    pub inline fn getDivisor(self: *@This()) f32 {
+        switch (self.*) {
+            .normal => return 1,
+            .faster => return 1.5,
+            .fastest => return 2,
+        }
+    }
 };
 
 // Taken from https://support.google.com/youtube/answer/2853702?hl=en#zippy=%2Ck-p-fps%2Cp-fps%2Cp
@@ -151,5 +196,19 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
     const stdout = std.io.getStdOut().writer();
     stdout.print(fmt, args) catch {
         return;
+    };
+}
+
+//b - a
+pub inline fn wrappedDifference(a: u64, b: u64) u64 {
+    return std.math.sub(u64, b, a) catch {
+        const subtraction = a - b;
+        const half = std.math.maxInt(u64) / 2;
+        if (subtraction > half) {
+            const b_offsetted = b +% half;
+            const a_offsetted = a +% half;
+            return b_offsetted - a_offsetted - 1;
+        }
+        return 0;
     };
 }

@@ -5,14 +5,6 @@ const builtins = @import("builtin");
 const SharedMemory = @import("./receiver/shared.zig").SharedMemory;
 const TransferLoop = @import("./receiver/transfer_loop.zig").TransferLoop;
 
-// 5 minute frame/packet_buffer (Tagged Union) buffer with player head
-
-pub fn adaptiveStreaming(average_latency: f32, average_packet_loss: f32, average_bandwidth: f32) void {
-    _ = average_latency;
-    _ = average_packet_loss;
-    _ = average_bandwidth;
-}
-
 const ReceiverArguments = struct {
     send_address: []const u8,
     bind_address: []const u8,

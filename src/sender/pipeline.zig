@@ -2,7 +2,7 @@ const std = @import("std");
 const Packet = @import("ffmpeg").AVPacket;
 
 const source = @import("source.zig");
-const encoder = @import("encoder.zig");
+const encoder = @import("../common/encoder.zig");
 const common = @import("../common/common.zig");
 
 pub const SupportedPipelines = enum {
@@ -96,6 +96,7 @@ const TestPipeline = struct {
     ) !void {
         defer self.frame_rate = new_frame_rate;
         defer self.resolution = new_resolution;
+        // TODO: Change the code to Work.
         common.print(
             "New Settings: {s}@{}\n",
             .{ new_resolution.getResolutionString(), @intFromEnum(new_frame_rate) },

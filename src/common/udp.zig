@@ -67,9 +67,10 @@ pub const UdpSenderPacket = struct {
         self.header.crc = crc.final();
     }
 
-    pub fn is_valid(self: *@This()) bool {
+    pub fn isValid(self: *@This()) bool {
         const current_crc = self.header.crc;
         self.initializeCrc();
+        defer self.header.crc = current_crc;
         return self.header.crc == current_crc;
     }
 
@@ -129,9 +130,10 @@ pub const UdpReceiverPacket = struct {
         self.header.crc = crc.final();
     }
 
-    pub fn is_valid(self: *@This()) bool {
+    pub fn isValid(self: *@This()) bool {
         const current_crc = self.header.crc;
         self.initializeCrc();
+        defer self.header.crc = current_crc;
         return self.header.crc == current_crc;
     }
 

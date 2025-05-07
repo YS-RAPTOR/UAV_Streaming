@@ -111,7 +111,7 @@ pub const TransferLoop = struct {
             var packet: udp.UdpReceiverPacket = undefined;
             packet.deserialize(buffer[0..len]);
 
-            if (!packet.is_valid()) {
+            if (!packet.isValid()) {
                 continue;
             }
             // Modify settings

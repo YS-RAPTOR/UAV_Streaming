@@ -32,7 +32,7 @@ pub const FramePacket = struct {
         if (self.packetFrame == .Frame) {
             ffmpeg.av_frame_free(@ptrCast(&self.packetFrame.Frame));
         } else if (self.packetFrame == .Packet) {
-            return;
+            unreachable;
         }
 
         var pkt = ffmpeg.av_packet_alloc();
@@ -148,19 +148,21 @@ pub const SharedMemory = struct {
 
     pub inline fn deinit(self: *@This()) void {
         self.frame_packet_buffer.deinit(self.allocator);
+        self.key_frames.deinit(self.allocator);
     }
 
     pub fn addPacket(self: *@This(), packets: []udp.UdpSenderPacket) !bool {
         // Add packet to shared memory
         var total_size: usize = 0;
         for (packets) |*packet| {
-            if (!packet.is_valid()) {
+            if (!packet.isValid()) {
                 return false;
             }
+
             total_size += packet.header.size;
         }
 
-        if (packets[0].header.frame_number >= 5 * 60 * 60) {
+        if (packets[0].header.frame_number >= 2 * 60) {
             self.stop();
         }
 

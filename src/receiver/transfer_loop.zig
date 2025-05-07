@@ -63,6 +63,13 @@ pub const TransferLoop = struct {
     pub fn deinit(self: *@This()) void {
         self.nacks.deinit(self.allocator);
         self.info_buffer.deinit(self.allocator);
+
+        // var iterator = self.packets.iterator();
+        // while (iterator.next()) |entry| {
+        //     var array = self.packets.fetchSwapRemove(entry.key_ptr.*) orelse continue;
+        //     array.value.deinit(self.allocator);
+        // }
+
         self.packets.deinit(self.allocator);
         self.already_received.deinit(self.allocator);
     }
@@ -95,7 +102,7 @@ pub const TransferLoop = struct {
                 return err;
             }) {}
 
-            std.debug.print("No of Nacks: {}\n", .{self.nacks.count()});
+            // std.debug.print("No of Nacks: {}\n", .{self.nacks.count()});
             if (self.shared_memory.isStopping() and self.nacks.count() == 0) {
                 return;
             }
@@ -124,8 +131,7 @@ pub const TransferLoop = struct {
             packet.deserialize(buffer[0..len]);
 
             // TODO: It seams like the first few packets being sent are invalid
-            if (!packet.is_valid()) {
-                // std.debug.print("Invalid Packet: {}\n", .{packet.header.id});
+            if (!packet.isValid()) {
                 continue;
             }
 
@@ -139,25 +145,21 @@ pub const TransferLoop = struct {
             // Make sure that the packet received is not older than 3 minutes
             if (current_time - packet.header.generated_timestamp > 3 * 60 * 1000) {
                 _ = self.nacks.fetchSwapRemove(packet.header.id);
-                // std.debug.print("Remove 1 Packet: {}\n", .{packet.header.id});
                 continue;
             }
 
             if (self.hasReceivedPacket(packet.header.id)) {
                 _ = self.nacks.fetchSwapRemove(packet.header.id);
-                // std.debug.print("Remove 2 Packet: {}\n", .{packet.header.id});
                 continue;
             }
 
             // Remove the packet from the nacks if present
             if (self.nacks.contains(packet.header.id)) {
                 _ = self.nacks.fetchSwapRemove(packet.header.id);
-                // std.debug.print("Remove 3 Packet: {}\n", .{packet.header.id});
             } else {
                 // Add packets from current id to the received id to the nacks
                 if (self.current_id != packet.header.id) {
                     const iterations = common.wrappedDifference(self.current_id, packet.header.id);
-                    // std.debug.print("{} - {}\n", .{ packet.header.id, self.current_id });
                     for (0..iterations) |_| {
                         if (self.hasReceivedPacket(self.current_id)) {
                             self.current_id +%= 1;
@@ -165,7 +167,6 @@ pub const TransferLoop = struct {
                         }
 
                         _ = try self.nacks.getOrPutValue(self.allocator, self.current_id, current_time);
-                        // std.debug.print("Add Packet: {}\n", .{self.current_id});
                         self.current_id +%= 1;
                     }
                     if (iterations > 0) {
@@ -184,20 +185,20 @@ pub const TransferLoop = struct {
                 parent_id,
             );
 
-            self.setReceivedPacket(packet.header.id);
             if (results.found_existing) {
                 @memcpy(
                     @as([*]u8, @ptrCast(&results.value_ptr.items[packet.header.parent_offset]))[0..@sizeOf(udp.UdpSenderPacket)],
                     @as([*]u8, @ptrCast(&packet))[0..@sizeOf(udp.UdpSenderPacket)],
                 );
             } else {
-                results.value_ptr.* = .empty;
-                try results.value_ptr.appendNTimes(self.allocator, .empty, packet.header.no_of_splits);
+                results.value_ptr.* = try .initCapacity(self.allocator, packet.header.no_of_splits);
+                results.value_ptr.appendNTimesAssumeCapacity(.empty, packet.header.no_of_splits);
                 @memcpy(
                     @as([*]u8, @ptrCast(&results.value_ptr.items[packet.header.parent_offset]))[0..@sizeOf(udp.UdpSenderPacket)],
                     @as([*]u8, @ptrCast(&packet))[0..@sizeOf(udp.UdpSenderPacket)],
                 );
             }
+            self.setReceivedPacket(packet.header.id);
 
             if (try self.shared_memory.addPacket(results.value_ptr.items)) {
                 var array = self.packets.fetchSwapRemove(parent_id).?;

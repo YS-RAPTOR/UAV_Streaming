@@ -218,6 +218,6 @@ const EncodedCameraPipeline = struct {
 
     fn getSettings(self: *@This()) struct { common.Resolution, common.FrameRate } {
         _ = self;
-        return .{ .@"2160p", .@"60" };
+        return .{ .@"1080p", .@"60" };
     }
 };

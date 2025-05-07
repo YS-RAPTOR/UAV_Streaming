@@ -14,7 +14,6 @@ pub const TransferLoop = struct {
 
     packets: std.AutoArrayHashMapUnmanaged(u64, std.ArrayListUnmanaged(udp.UdpSenderPacket)),
     already_received: std.ArrayListUnmanaged(bool),
-    hash_offset: u64,
 
     shared_memory: *SharedMemory,
 
@@ -39,11 +38,12 @@ pub const TransferLoop = struct {
 
         var already_received = try std.ArrayListUnmanaged(bool).initCapacity(
             alloc,
-            shared_mem.frame_packet_buffer.array.items.len,
+            common.NoOfPackets,
         );
+
         already_received.appendNTimesAssumeCapacity(
             false,
-            shared_mem.frame_packet_buffer.array.items.len,
+            common.NoOfPackets,
         );
 
         return .{
@@ -57,7 +57,6 @@ pub const TransferLoop = struct {
             .info_index = 0,
             .packets = .empty,
             .already_received = already_received,
-            .hash_offset = shared_mem.frame_packet_buffer.hash_offset,
         };
     }
 
@@ -96,6 +95,7 @@ pub const TransferLoop = struct {
                 return err;
             }) {}
 
+            std.debug.print("No of Nacks: {}\n", .{self.nacks.count()});
             if (self.shared_memory.isStopping() and self.nacks.count() == 0) {
                 return;
             }
@@ -123,11 +123,13 @@ pub const TransferLoop = struct {
             var packet: udp.UdpSenderPacket = undefined;
             packet.deserialize(buffer[0..len]);
 
-            const current_time = std.time.milliTimestamp();
+            // TODO: It seams like the first few packets being sent are invalid
             if (!packet.is_valid()) {
+                // std.debug.print("Invalid Packet: {}\n", .{packet.header.id});
                 continue;
             }
 
+            const current_time = std.time.milliTimestamp();
             self.insertInfo(
                 current_time - packet.header.generated_timestamp,
                 @intCast(len),
@@ -136,18 +138,34 @@ pub const TransferLoop = struct {
 
             // Make sure that the packet received is not older than 3 minutes
             if (current_time - packet.header.generated_timestamp > 3 * 60 * 1000) {
+                _ = self.nacks.fetchSwapRemove(packet.header.id);
+                // std.debug.print("Remove 1 Packet: {}\n", .{packet.header.id});
+                continue;
+            }
+
+            if (self.hasReceivedPacket(packet.header.id)) {
+                _ = self.nacks.fetchSwapRemove(packet.header.id);
+                // std.debug.print("Remove 2 Packet: {}\n", .{packet.header.id});
                 continue;
             }
 
             // Remove the packet from the nacks if present
             if (self.nacks.contains(packet.header.id)) {
                 _ = self.nacks.fetchSwapRemove(packet.header.id);
+                // std.debug.print("Remove 3 Packet: {}\n", .{packet.header.id});
             } else {
                 // Add packets from current id to the received id to the nacks
                 if (self.current_id != packet.header.id) {
                     const iterations = common.wrappedDifference(self.current_id, packet.header.id);
+                    // std.debug.print("{} - {}\n", .{ packet.header.id, self.current_id });
                     for (0..iterations) |_| {
+                        if (self.hasReceivedPacket(self.current_id)) {
+                            self.current_id +%= 1;
+                            continue;
+                        }
+
                         _ = try self.nacks.getOrPutValue(self.allocator, self.current_id, current_time);
+                        // std.debug.print("Add Packet: {}\n", .{self.current_id});
                         self.current_id +%= 1;
                     }
                     if (iterations > 0) {
@@ -159,10 +177,6 @@ pub const TransferLoop = struct {
             }
 
             // Store the packet in the buffer
-
-            if (self.hasReceived(packet.header.frame_number)) {
-                continue;
-            }
             const parent_id = packet.header.id - packet.header.parent_offset;
 
             var results = try self.packets.getOrPut(
@@ -170,6 +184,7 @@ pub const TransferLoop = struct {
                 parent_id,
             );
 
+            self.setReceivedPacket(packet.header.id);
             if (results.found_existing) {
                 @memcpy(
                     @as([*]u8, @ptrCast(&results.value_ptr.items[packet.header.parent_offset]))[0..@sizeOf(udp.UdpSenderPacket)],
@@ -187,18 +202,17 @@ pub const TransferLoop = struct {
             if (try self.shared_memory.addPacket(results.value_ptr.items)) {
                 var array = self.packets.fetchSwapRemove(parent_id).?;
                 array.value.deinit(self.allocator);
-                self.setReceived(packet.header.frame_number);
             }
         }
     }
 
-    pub fn hasReceived(self: *@This(), parent_id: u64) bool {
-        const index = (parent_id + self.hash_offset) % self.already_received.items.len;
+    pub fn hasReceivedPacket(self: *@This(), packet_id: u64) bool {
+        const index = (packet_id + common.HashOffset) % self.already_received.items.len;
         return self.already_received.items[index];
     }
 
-    pub fn setReceived(self: *@This(), parent_id: u64) void {
-        const index = (parent_id + self.hash_offset) % self.already_received.items.len;
+    pub fn setReceivedPacket(self: *@This(), packet_id: u64) void {
+        const index = (packet_id + common.HashOffset) % self.already_received.items.len;
         var half = index + self.already_received.items.len / 2;
         half = half % self.already_received.items.len;
 
@@ -229,7 +243,7 @@ pub const TransferLoop = struct {
 
         while (iterator.next()) |entry| {
             // If greater than 1000ms add to nacks
-            if (current_time - entry.value_ptr.* > 1000) {
+            if (current_time - entry.value_ptr.* > 3000) {
                 if (no_of_nacks >= packet.nacks.len) {
                     break;
                 }
@@ -305,7 +319,7 @@ pub const TransferLoop = struct {
 
     fn adaptiveStreaming(info_buffer: []Info, no_of_nacks: usize) struct { common.Resolution, common.FrameRate } {
         const average_latency, const bandwidth = findBandwidthAndLatency(info_buffer) orelse {
-            return .{ common.Resolution.@"2160p", common.FrameRate.@"60" };
+            return .{ common.Resolution.@"1080p", common.FrameRate.@"60" };
         };
 
         // TODO: Make code better.
@@ -320,14 +334,10 @@ pub const TransferLoop = struct {
 
         // Resolutions_available are 2160p, 1440p, 1080p, 720p, 480p, 360p
         if (bandwidth > 1000) {
-            resolution = common.Resolution.@"2160p";
-        } else if (bandwidth > 500) {
-            resolution = common.Resolution.@"1440p";
-        } else if (bandwidth > 250) {
             resolution = common.Resolution.@"1080p";
-        } else if (bandwidth > 100) {
+        } else if (bandwidth > 500) {
             resolution = common.Resolution.@"720p";
-        } else if (bandwidth > 50) {
+        } else if (bandwidth > 250) {
             resolution = common.Resolution.@"480p";
         } else {
             resolution = common.Resolution.@"360p";
@@ -337,10 +347,10 @@ pub const TransferLoop = struct {
             frame_rate = common.FrameRate.@"30";
         }
 
-        common.print(
-            "Average Latency: {d}, Bandwidth: {d}, No of Nacks: {d}, Resolution: {s}, FrameRate: {}\n",
-            .{ average_latency, bandwidth, no_of_nacks, resolution.getResolutionString(), @intFromEnum(frame_rate) },
-        );
+        // common.print(
+        //     "Average Latency: {d}, Bandwidth: {d}, No of Nacks: {d}, Resolution: {s}, FrameRate: {}\n",
+        //     .{ average_latency, bandwidth, no_of_nacks, resolution.getResolutionString(), @intFromEnum(frame_rate) },
+        // );
 
         return .{ resolution, frame_rate };
     }

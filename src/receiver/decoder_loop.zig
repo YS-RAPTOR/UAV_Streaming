@@ -99,8 +99,8 @@ const Player = struct {
 
     pub fn init(shared_mem: *shared_memory.SharedMemory, stats_file: *std.fs.File) !@This() {
         const scaler = ffmpeg.sws_getContext(
-            common.Resolution.@"2160p".getResolutionWidth(),
-            @intFromEnum(common.Resolution.@"2160p"),
+            common.Resolution.@"1080p".getResolutionWidth(),
+            @intFromEnum(common.Resolution.@"1080p"),
             ffmpeg.AV_PIX_FMT_YUV420P,
 
             common.Resolution.@"1080p".getResolutionWidth(),

@@ -1,13 +1,12 @@
 const ffmpeg = @import("ffmpeg");
 const std = @import("std");
+const udp = @import("udp.zig");
 
 pub const Resolution = enum(u16) {
     @"360p" = 360,
     @"480p" = 480,
     @"720p" = 720,
     @"1080p" = 1080,
-    @"1440p" = 1440,
-    @"2160p" = 2160,
 
     pub fn getResolutionString(self: @This()) []const u8 {
         switch (self) {
@@ -15,8 +14,6 @@ pub const Resolution = enum(u16) {
             .@"480p" => return "854x480",
             .@"720p" => return "1280x720",
             .@"1080p" => return "1920x1080",
-            .@"1440p" => return "2560x1440",
-            .@"2160p" => return "3840x2160",
         }
     }
 
@@ -26,8 +23,6 @@ pub const Resolution = enum(u16) {
             .@"480p" => return 854,
             .@"720p" => return 1280,
             .@"1080p" => return 1920,
-            .@"1440p" => return 2560,
-            .@"2160p" => return 3840,
         }
     }
 };
@@ -85,18 +80,6 @@ pub const PlayBackSpeed = enum {
 // Taken from https://support.google.com/youtube/answer/2853702?hl=en#zippy=%2Ck-p-fps%2Cp-fps%2Cp
 pub fn getMegaBitRate(resolution: Resolution, frame_rate: FrameRate) u32 {
     switch (resolution) {
-        .@"2160p" => {
-            switch (frame_rate) {
-                .@"30" => return 30,
-                .@"60" => return 35,
-            }
-        },
-        .@"1440p" => {
-            switch (frame_rate) {
-                .@"30" => return 15,
-                .@"60" => return 24,
-            }
-        },
         .@"1080p" => {
             switch (frame_rate) {
                 .@"30" => return 10,
@@ -212,3 +195,19 @@ pub inline fn wrappedDifference(a: u64, b: u64) u64 {
         return 0;
     };
 }
+
+fn getNoOfPackets(comptime storage: comptime_int) comptime_int {
+    const storate_bytes: comptime_float = storage * 1024.0 * 1024.0 * 1024.0;
+    const no_of_udp_packets: comptime_int = @intFromFloat(@ceil((storate_bytes / udp.UdpSenderPacket.MAX_DATA_SIZE)));
+    return no_of_udp_packets;
+}
+
+fn getHashOffest(comptime no_of_udp_packets: comptime_int) comptime_int {
+    const max_id = std.math.maxInt(u64) + 1;
+    const div = max_id / no_of_udp_packets;
+    return (div + 1) * no_of_udp_packets - max_id;
+}
+
+pub const Storage_Allocated_For_Packets = 2;
+pub const NoOfPackets: u64 = getNoOfPackets(Storage_Allocated_For_Packets);
+pub const HashOffset: u64 = getHashOffest(getNoOfPackets(Storage_Allocated_For_Packets));

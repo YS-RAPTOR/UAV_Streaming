@@ -39,7 +39,7 @@ pub const Decoder = struct {
     pub fn init() !@This() {
         var self: @This() = undefined;
         self.codec = try findBestCodec();
-        try self.initialize(.@"2160p");
+        try self.initialize(.@"1080p");
         return self;
     }
 

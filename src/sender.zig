@@ -17,7 +17,7 @@ const SenderArguments = struct {
     bind_address: []const u8,
 
     pub const default: SenderArguments = .{
-        .resolution = .@"2160p",
+        .resolution = .@"1080p",
         .frame_rate = .@"60",
         // TEST: Change to Camera after testing
         .pipeline = .Test,
@@ -79,7 +79,6 @@ pub fn main() !void {
         allocator,
         arguements.resolution,
         arguements.frame_rate,
-        2,
     ) catch |err| {
         common.print("Error initializing shared memory: {}\n", .{err});
         return;

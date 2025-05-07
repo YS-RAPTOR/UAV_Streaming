@@ -17,7 +17,7 @@ pub const PNG = struct {
         }
         self.codec = codec;
 
-        try self.initialize(common.Resolution.@"2160p", false);
+        try self.initialize(common.Resolution.@"1080p", false);
         return self;
     }
 

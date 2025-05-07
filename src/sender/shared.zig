@@ -6,7 +6,6 @@ pub const SharedMemory = struct {
     allocator: std.mem.Allocator,
 
     committed_packets: std.ArrayListUnmanaged(udp.UdpSenderPacket),
-    hash_offset: u64,
 
     current_packet: std.atomic.Value(u64),
     settings: std.atomic.Value(Settings),
@@ -23,26 +22,15 @@ pub const SharedMemory = struct {
         allocator: std.mem.Allocator,
         starting_resolution: common.Resolution,
         starting_frame_rate: common.FrameRate,
-        comptime storage: comptime_int,
     ) !SharedMemory {
-        const hash_offset, const no_of_udp_packets = comptime blk: {
-            const storate_bytes: comptime_float = storage * 1024.0 * 1024.0 * 1024.0;
-            const no_of_udp_packets: comptime_int = @intFromFloat(@ceil((storate_bytes / udp.UdpSenderPacket.MAX_DATA_SIZE)));
-            const max_id = std.math.maxInt(u64) + 1;
-            const div = max_id / no_of_udp_packets;
-
-            break :blk .{ (div + 1) * no_of_udp_packets - max_id, no_of_udp_packets };
-        };
-
         var committed_packets: std.ArrayListUnmanaged(udp.UdpSenderPacket) = .empty;
-        try committed_packets.appendNTimes(allocator, .empty, no_of_udp_packets);
+        try committed_packets.appendNTimes(allocator, .empty, common.NoOfPackets);
         errdefer committed_packets.deinit(allocator);
 
         return .{
             .allocator = allocator,
             .committed_packets = committed_packets,
             .current_packet = .init(0),
-            .hash_offset = @intCast(hash_offset),
             .settings = .init(.{
                 .resolution = starting_resolution,
                 .frame_rate = starting_frame_rate,
@@ -57,7 +45,7 @@ pub const SharedMemory = struct {
     }
 
     pub inline fn getIndex(self: *@This(), id: u64) u64 {
-        return (id + self.hash_offset) % self.committed_packets.items.len;
+        return (id + common.HashOffset) % self.committed_packets.items.len;
     }
 
     pub inline fn insertPackets(self: *@This(), data: []u8, header: udp.UdpSenderPacket.Header) void {

@@ -338,7 +338,7 @@ pub const TransferLoop = struct {
         }
 
         common.print(
-            "Average Latency: {}, Bandwidth: {}, No of Nacks: {}, Resolution: {s}, FrameRate: {}",
+            "Average Latency: {d}, Bandwidth: {d}, No of Nacks: {d}, Resolution: {s}, FrameRate: {}\n",
             .{ average_latency, bandwidth, no_of_nacks, resolution.getResolutionString(), @intFromEnum(frame_rate) },
         );
 

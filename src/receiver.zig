@@ -11,11 +11,11 @@ const ReceiverArguments = struct {
     bind_address: []const u8,
 
     pub const default: @This() = .{
-        // TEST: Change when testing
-        // .send_address = "127.0.0.1:2002",
-        // .bind_address = "127.0.0.1:2003",
-        .send_address = "127.0.0.1:2003",
-        .bind_address = "127.0.0.1:2004",
+        // TODO: Change when testing
+        .send_address = "127.0.0.1:2002",
+        .bind_address = "127.0.0.1:2003",
+        // .send_address = "127.0.0.1:2003",
+        // .bind_address = "127.0.0.1:2004",
     };
 };
 
@@ -87,18 +87,18 @@ pub fn main() !void {
     };
     defer decoder_loop.deinit();
 
-    const thread = std.Thread.spawn(
-        .{
-            .allocator = allocator,
-            .stack_size = 16 * 1024 * 1024,
-        },
-        DecoderLoop.run,
-        .{&decoder_loop},
-    ) catch |err| {
-        common.print("Error spawning thread: {}\n", .{err});
-        return;
-    };
+    // const thread = std.Thread.spawn(
+    //     .{
+    //         .allocator = allocator,
+    //         .stack_size = 16 * 1024 * 1024,
+    //     },
+    //     DecoderLoop.run,
+    //     .{&decoder_loop},
+    // ) catch |err| {
+    //     common.print("Error spawning thread: {}\n", .{err});
+    //     return;
+    // };
+    // defer thread.join();
 
     try transfer_loop.run();
-    thread.join();
 }

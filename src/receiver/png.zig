@@ -44,7 +44,7 @@ pub const PNG = struct {
         self.context.*.width = width;
         self.context.*.height = height;
         self.context.*.pix_fmt = ffmpeg.AV_PIX_FMT_RGB24;
-        self.context.*.time_base = .{ .num = 1, .den = 25 };
+        self.context.*.time_base = .{ .num = 1, .den = 1 };
 
         if (ffmpeg.avcodec_open2(self.context, self.codec, null) < 0) {
             return error.CouldNotOpenCodec;

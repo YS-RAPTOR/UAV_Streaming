@@ -5,12 +5,14 @@ const sdl = @import("sdl");
 const ffmpeg = @import("ffmpeg");
 const mp4 = @import("mp4.zig");
 const png = @import("png.zig");
+const decoder = @import("decoder.zig");
 
-const Decoder = struct {
+const OptimisticDecoder = struct {
     current_frame_id: ?u64, //null means it is free.
     shared_memory: *shared_memory.SharedMemory,
     stats_file: *std.fs.File,
     png: png.PNG,
+    decoder: decoder.Decoder,
 
     pub fn init(shared_mem: *shared_memory.SharedMemory, stats_file: *std.fs.File) !@This() {
         return .{
@@ -18,6 +20,7 @@ const Decoder = struct {
             .current_frame_id = null,
             .stats_file = stats_file,
             .png = try .init(),
+            .decoder = try .init(),
         };
     }
 
@@ -25,18 +28,19 @@ const Decoder = struct {
         self.current_frame_id = null;
     }
 
-    pub fn reinitialize(self: *@This(), frame_packet: shared_memory.FramePacket) !void {
+    pub fn reinitialize(self: *@This(), resolution: common.Resolution) !void {
         std.debug.assert(self.current_frame_id != null);
-        _ = frame_packet;
+        self.decoder.deinit();
+        try self.decoder.initialize(resolution);
     }
 
     pub fn deinit(self: *@This()) void {
-        // TODO: Add decoder deinit
         self.png.deinit();
+        self.decoder.deinit();
     }
 
     pub fn decode(self: *@This()) !void {
-        var reintialize = false;
+        var should_reinitialize = false;
         if (self.current_frame_id == null) {
             if (!self.shared_memory.key_frames_mutex.tryLock()) {
                 return;
@@ -45,7 +49,7 @@ const Decoder = struct {
             self.current_frame_id = self.shared_memory.key_frames.pop() orelse {
                 return;
             };
-            reintialize = true;
+            should_reinitialize = true;
         }
 
         var packet = self.shared_memory.frame_packet_buffer.getFramePacket(self.current_frame_id.?) orelse return;
@@ -55,14 +59,18 @@ const Decoder = struct {
             self.free();
             return;
         }
+
+        if (should_reinitialize) {
+            try self.reinitialize(packet.resolution);
+        }
+
         var packet_data = packet.packetFrame.Packet;
         defer ffmpeg.av_packet_free(@ptrCast(&packet_data));
 
-        if (reintialize) {
-            try self.reinitialize(packet);
-        }
-
-        // TODO: Decode the image and write it to the shared memory.
+        // Decode the image and write it to the shared memory.
+        var frame = try self.decoder.getFrame(packet_data);
+        errdefer ffmpeg.av_frame_free(@ptrCast(&frame));
+        packet.packetFrame = .{ .Frame = frame };
 
         // Write the image to a file.
         var filename: [255]u8 = undefined;
@@ -143,6 +151,11 @@ const Player = struct {
 
         var frame = self.shared_memory.frame_packet_buffer.getFramePacket(self.current_frame_id) orelse return;
         defer frame.mutex.unlock();
+
+        if (frame.packetFrame != .Frame) {
+            return;
+        }
+
         const frame_time = frame.frame_rate.getFrameTime(self.playback_speed);
 
         const current_time = std.time.milliTimestamp();
@@ -197,21 +210,28 @@ const Player = struct {
 
 pub const DecoderLoop = struct {
     const NumberOfDecoders = 8;
-    decoders: [NumberOfDecoders]Decoder,
+    decoders: [NumberOfDecoders]OptimisticDecoder,
     shared_memory: *shared_memory.SharedMemory,
     player: Player,
     image_latency_file: std.fs.File,
     playback_latency_file: std.fs.File,
 
     pub fn init(shared_mem: *shared_memory.SharedMemory) !@This() {
-        try std.fs.cwd().makeDir("./Output");
-        var image_latency_file = try std.fs.cwd().createFile("./Output/image-latency.csv", .{});
-        var playback_latency_file = try std.fs.cwd().createFile("./Output/playback-latency.csv", .{});
+        var folder = std.fs.cwd().openDir("Output", .{}) catch |err| blk: {
+            if (err == std.fs.File.OpenError.FileNotFound) {
+                try std.fs.cwd().makeDir("Output");
+                break :blk try std.fs.cwd().openDir("Output", .{});
+            }
+            return err;
+        };
 
-        var decoders: [NumberOfDecoders]Decoder = undefined;
+        var image_latency_file = try folder.createFile("image-latency.csv", .{});
+        var playback_latency_file = try folder.createFile("playback-latency.csv", .{});
+
+        var decoders: [NumberOfDecoders]OptimisticDecoder = undefined;
 
         for (0..NumberOfDecoders) |i| {
-            decoders[i] = try Decoder.init(shared_mem, &image_latency_file);
+            decoders[i] = try OptimisticDecoder.init(shared_mem, &image_latency_file);
         }
 
         const player = try Player.init(

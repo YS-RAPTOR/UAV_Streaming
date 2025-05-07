@@ -32,7 +32,7 @@ pub const FramePacket = struct {
         if (self.packetFrame == .Frame) {
             ffmpeg.av_frame_free(@ptrCast(&self.packetFrame.Frame));
         } else if (self.packetFrame == .Packet) {
-            unreachable;
+            return;
         }
 
         var pkt = ffmpeg.av_packet_alloc();

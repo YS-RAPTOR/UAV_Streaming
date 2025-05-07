@@ -52,6 +52,11 @@ pub const H264Codec = struct {
             return error.CouldNotAllocateCodecContext;
         }
 
+        // TODO: CHECK IF NEEDED
+        // if (ffmpeg.av_opt_set(context.*.priv_data, "repeat-headers", "1", 0) < 0) {
+        //     return error.CouldNotSetCodecOptions;
+        // }
+
         errdefer ffmpeg.avcodec_free_context(&context);
 
         context.*.width = @intCast(resolution.getResolutionWidth());

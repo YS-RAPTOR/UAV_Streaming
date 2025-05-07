@@ -74,7 +74,7 @@ pub fn build(b: *std.Build) void {
     const ffmpeg_dep = Dependency{
         .name = "ffmpeg",
         .module = ffmpeg,
-        .system_libs = &[_][]const u8{ "avutil", "avformat", "avcodec", "avfilter", "avdevice" },
+        .system_libs = &[_][]const u8{ "avutil", "avformat", "avcodec", "avfilter", "avdevice", "libswscale" },
     };
 
     const receiver = create(

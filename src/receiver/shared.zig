@@ -2,6 +2,7 @@ const std = @import("std");
 const udp = @import("../common/udp.zig");
 const common = @import("../common/common.zig");
 const ffmpeg = @import("ffmpeg");
+const Queue = @import("queue.zig").Queue;
 
 pub const FramePacket = struct {
     frame_rate: common.FrameRate,
@@ -41,6 +42,7 @@ pub const FramePacket = struct {
         if (frame_packet_type == .Frame) {
             ffmpeg.av_frame_free(@ptrCast(&self.frame_packet.Frame));
         } else if (frame_packet_type == .Packet) {
+            std.debug.print("Packet Identifier: {}\n", .{packet.header.frame_number});
             unreachable;
         }
 
@@ -134,10 +136,10 @@ pub const FramePacketBuffer = struct {
         try self.array.items[index].init(packets[0], buffer);
     }
 
-    pub fn getFramePacket(self: *@This(), id: u64, frame_packet_type: FramePacket.FramePacketType) ?FramePacket {
+    pub fn getFramePacket(self: *@This(), id: u64, frame_packet_type: FramePacket.FramePacketType) ?*FramePacket {
         // Get the frame packet at the given index
         const index = self.getIndex(id);
-        var packet = self.array.items[index];
+        var packet = &self.array.items[index];
 
         if (frame_packet_type != packet.frame_packet_type.load(.unordered)) {
             return null;
@@ -158,16 +160,14 @@ pub const SharedMemory = struct {
     allocator: std.mem.Allocator,
     no_of_frames_received: std.atomic.Value(u64),
 
-    key_frames: std.ArrayListUnmanaged(u64),
-    key_frames_mutex: std.Thread.Mutex,
+    key_frames: Queue(u64, 2048),
 
     pub inline fn init(allocator: std.mem.Allocator) !SharedMemory {
         return SharedMemory{
             .is_stopping = std.atomic.Value(bool).init(false),
             .frame_packet_buffer = try .init(allocator, 5),
             .allocator = allocator,
-            .key_frames = .empty,
-            .key_frames_mutex = .{},
+            .key_frames = try .init(allocator),
             .no_of_frames_received = .init(0),
             .has_crashed = .init(false),
         };
@@ -197,11 +197,7 @@ pub const SharedMemory = struct {
         try self.frame_packet_buffer.addPacket(self.allocator, packets, total_size);
 
         if (packets[0].header.is_key_frame) {
-            std.debug.print("[Receiver] Key frame: {d}\n", .{packets[0].header.frame_number});
-            self.key_frames_mutex.lock();
-            std.debug.print("[Received] Key frame: {d}\n", .{packets[0].header.frame_number});
-            defer self.key_frames_mutex.unlock();
-            try self.key_frames.append(self.allocator, packets[0].header.frame_number);
+            try self.key_frames.append(packets[0].header.frame_number);
         }
 
         _ = self.no_of_frames_received.fetchAdd(1, .acq_rel);

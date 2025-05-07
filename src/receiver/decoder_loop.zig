@@ -44,14 +44,9 @@ const OptimisticDecoder = struct {
 
     pub fn decode(self: *@This()) !void {
         if (self.current_frame_id == null) {
-            if (!self.shared_memory.key_frames_mutex.tryLock()) {
-                return;
-            }
             self.current_frame_id = self.shared_memory.key_frames.pop() orelse {
-                self.shared_memory.key_frames_mutex.unlock();
                 return;
             };
-            self.shared_memory.key_frames_mutex.unlock();
             self.start_frame_id = self.current_frame_id.?;
             try self.reinitialize();
         }
@@ -81,6 +76,7 @@ const OptimisticDecoder = struct {
         }
 
         try self.submitPacket(packet.frame_packet.Packet);
+
         packet.mutex.unlock();
         self.current_frame_id.? +%= 1;
     }
@@ -101,6 +97,8 @@ const OptimisticDecoder = struct {
             ) orelse return error.CouldNotGetFramePacket;
             defer pkt.mutex.unlock();
 
+            std.debug.print("Decoder: Frame ID: {d}\n", .{frame_id});
+
             var pkt_data = pkt.frame_packet.Packet;
             defer ffmpeg.av_packet_free(@ptrCast(&pkt_data));
 
@@ -117,12 +115,6 @@ const OptimisticDecoder = struct {
     }
 
     fn writeFrame(self: *@This(), frame: *ffmpeg.AVFrame, timestamp: i64) !void {
-        std.debug.print("Height: {d}, Width: {d}\n", .{ frame.height, frame.width });
-        if (frame.data[0] == null) {
-            std.debug.print("Frame data is null\n", .{});
-            return;
-        }
-
         const frame_id: u64 = @bitCast(frame.pts);
 
         // Write the latency information to a file.
@@ -197,6 +189,7 @@ const Player = struct {
     pub fn deinit(self: *@This()) void {
         ffmpeg.av_frame_free(@ptrCast(&self.frame));
         ffmpeg.sws_freeContext(self.scaler);
+        self.mp4.deinit();
     }
 
     pub fn render(self: *@This()) !void {
@@ -204,25 +197,23 @@ const Player = struct {
         // Get the quit event
         // Use sdl events
 
-        // std.debug.print("[Player] Frame ID: {d}\n", .{self.current_frame_id});
         var frame = self.shared_memory.frame_packet_buffer.getFramePacket(self.current_frame_id, .Frame) orelse return;
         defer frame.mutex.unlock();
 
-        const frame_time = frame.frame_rate.getFrameTime(self.playback_speed);
-
         const current_time = std.time.milliTimestamp();
-        if (current_time - self.last_frame_time < frame_time) {
-            return;
-        }
+        // const frame_time = frame.frame_rate.getFrameTime(self.playback_speed);
+        //
+        // if (current_time - self.last_frame_time < frame_time) {
+        //     return;
+        // }
+        // defer self.last_frame_time = current_time;
         defer self.current_frame_id += 1;
-        defer self.last_frame_time = current_time;
 
         self.scaler = ffmpeg.sws_getCachedContext(
             self.scaler,
-            frame.resolution.getResolutionWidth(),
-            @intFromEnum(frame.resolution),
-            ffmpeg.AV_PIX_FMT_YUV420P,
-
+            frame.frame_packet.Frame.*.width,
+            frame.frame_packet.Frame.*.height,
+            frame.frame_packet.Frame.*.format,
             common.Resolution.@"1080p".getResolutionWidth(),
             @intFromEnum(common.Resolution.@"1080p"),
             ffmpeg.AV_PIX_FMT_RGBA,
@@ -233,7 +224,6 @@ const Player = struct {
         ) orelse return error.ScalerCouldNotBeInitialize;
 
         // Scale the frame to the screen size.
-        ffmpeg.av_frame_unref(self.frame);
         if (ffmpeg.sws_scale(
             self.scaler,
             &frame.frame_packet.Frame.*.data,
@@ -246,6 +236,8 @@ const Player = struct {
             return error.CouldNotScaleFrame;
         }
 
+        self.frame.*.pts = @bitCast(self.current_frame_id);
+
         // TODO: Render the frame.
 
         try self.mp4.write(self.frame);
@@ -256,12 +248,12 @@ const Player = struct {
 
         // Write the latency information to a file.
         try self.stats_file.print("{d},{d}\n", .{ self.current_frame_id, current_time - frame.timestamp });
-        std.debug.print("[Player] Frame ID: {d}, Latency: {d}\n", .{ self.current_frame_id, current_time - frame.timestamp });
+        std.debug.print("Player: Frame ID: {d}\n", .{self.current_frame_id});
     }
 };
 
 pub const DecoderLoop = struct {
-    const NumberOfDecoders = 8;
+    const NumberOfDecoders = 5;
     decoders: [NumberOfDecoders]OptimisticDecoder,
     shared_memory: *shared_memory.SharedMemory,
     player: Player,

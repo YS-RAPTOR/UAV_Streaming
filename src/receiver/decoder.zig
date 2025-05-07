@@ -55,6 +55,9 @@ pub const Decoder = struct {
             }
             break :blk context;
         };
+
+        self.context.pkt_timebase = .{ .num = 1, .den = 60 };
+
         errdefer ffmpeg.avcodec_free_context(@ptrCast(&self.context));
         if (ffmpeg.avcodec_open2(self.context, self.codec, null) < 0) {
             return error.CouldNotOpenCodec;

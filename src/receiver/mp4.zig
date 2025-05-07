@@ -79,14 +79,13 @@ pub const MP4 = struct {
             .stream = stream,
             .packet = try .init(),
             .scaler = scaler,
-            .frame = try .init(),
+            .frame = frame,
         };
     }
 
     pub fn deinit(self: *@This()) void {
         self.encoder.deinit();
         self.packet.deinit();
-        self.frame.deinit();
         _ = ffmpeg.sws_freeContext(self.scaler);
         _ = ffmpeg.av_write_trailer(self.context);
         _ = ffmpeg.avio_closep(&self.context.*.pb);

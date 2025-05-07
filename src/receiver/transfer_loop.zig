@@ -103,7 +103,10 @@ pub const TransferLoop = struct {
                 return err;
             }) {}
 
-            // std.debug.print("No of Nacks: {}\n", .{self.nacks.count()});
+            const nack_count = self.nacks.count();
+            if (nack_count > 1000) {
+                std.debug.print("No of Nacks: {}\n", .{nack_count});
+            }
             if (self.shared_memory.isStopping() and self.nacks.count() == 0) {
                 return;
             }
@@ -114,7 +117,7 @@ pub const TransferLoop = struct {
         var other_address: posix.sockaddr = undefined;
         var other_address_len: posix.socklen_t = @sizeOf(posix.sockaddr);
 
-        for (0..1000) |_| {
+        for (0..100) |_| {
             const len = posix.recvfrom(
                 socket,
                 buffer,
@@ -131,7 +134,6 @@ pub const TransferLoop = struct {
             var packet: udp.UdpSenderPacket = undefined;
             packet.deserialize(buffer[0..len]);
 
-            // TODO: It seams like the first few packets being sent are invalid
             if (!packet.isValid()) {
                 continue;
             }

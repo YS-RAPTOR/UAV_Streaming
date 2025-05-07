@@ -17,11 +17,12 @@ pub const PNG = struct {
         }
         self.codec = codec;
 
-        try self.initialize(common.Resolution.@"1080p", false);
+        try self.initialize(1080, false);
         return self;
     }
 
-    pub fn initialize(self: *@This(), resolution: common.Resolution, comptime is_initialized: bool) !void {
+    pub fn initialize(self: *@This(), height: u16, comptime is_initialized: bool) !void {
+        const resolution: common.Resolution = @enumFromInt(height);
         if (self.resolution == resolution and is_initialized) {
             return;
         }
@@ -38,9 +39,7 @@ pub const PNG = struct {
         };
         errdefer ffmpeg.avcodec_free_context(@ptrCast(&self.context));
 
-        const width = resolution.getResolutionWidth();
-        const height: u16 = @intFromEnum(resolution);
-
+        const width: u16 = resolution.getResolutionWidth();
         self.context.*.width = width;
         self.context.*.height = height;
         self.context.*.pix_fmt = ffmpeg.AV_PIX_FMT_RGB24;
@@ -53,7 +52,7 @@ pub const PNG = struct {
         self.scaler = ffmpeg.sws_getContext(
             width,
             height,
-            ffmpeg.AV_PIX_FMT_YUV420P,
+            ffmpeg.AV_PIX_FMT_NV12,
             width,
             height,
             ffmpeg.AV_PIX_FMT_RGB24,
@@ -89,15 +88,15 @@ pub const PNG = struct {
         }
     }
 
-    pub fn write(self: *@This(), filename: []const u8, resolution: common.Resolution, frame: *ffmpeg.AVFrame) !void {
-        try self.initialize(resolution, true);
+    pub fn write(self: *@This(), filename: []const u8, frame: *ffmpeg.AVFrame) !void {
+        try self.initialize(@intCast(frame.*.height), true);
 
         if (ffmpeg.sws_scale(
             self.scaler,
             &frame.*.data,
             &frame.*.linesize,
             0,
-            @intFromEnum(resolution),
+            frame.*.height,
             &self.frame.*.data,
             &self.frame.*.linesize,
         ) < 0) {
@@ -117,6 +116,7 @@ pub const PNG = struct {
 
         const file = try std.fs.cwd().createFile(filename, .{ .exclusive = true });
         try file.writeAll(packet.*.data[0..@intCast(packet.*.size)]);
+        file.close();
     }
 
     pub fn deinit(self: *@This()) void {

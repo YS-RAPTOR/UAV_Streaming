@@ -9,14 +9,16 @@ const decoder = @import("decoder.zig");
 
 const OptimisticDecoder = struct {
     current_frame_id: ?u64, //null means it is free.
+    start_frame_id: u64,
     shared_memory: *shared_memory.SharedMemory,
-    stats_file: *std.fs.File,
+    stats_file: std.fs.File.Writer,
     png: png.PNG,
     decoder: decoder.Decoder,
 
-    pub fn init(shared_mem: *shared_memory.SharedMemory, stats_file: *std.fs.File) !@This() {
+    pub fn init(shared_mem: *shared_memory.SharedMemory, stats_file: std.fs.File.Writer) !@This() {
         return .{
             .shared_memory = shared_mem,
+            .start_frame_id = 0,
             .current_frame_id = null,
             .stats_file = stats_file,
             .png = try .init(),
@@ -24,14 +26,15 @@ const OptimisticDecoder = struct {
         };
     }
 
-    pub fn free(self: *@This()) void {
+    pub fn free(self: *@This()) !void {
+        try self.submitPacket(null);
         self.current_frame_id = null;
     }
 
-    pub fn reinitialize(self: *@This(), resolution: common.Resolution) !void {
+    pub fn reinitialize(self: *@This()) !void {
         std.debug.assert(self.current_frame_id != null);
         self.decoder.deinit();
-        try self.decoder.initialize(resolution);
+        try self.decoder.initialize();
     }
 
     pub fn deinit(self: *@This()) void {
@@ -40,50 +43,102 @@ const OptimisticDecoder = struct {
     }
 
     pub fn decode(self: *@This()) !void {
-        var should_reinitialize = false;
         if (self.current_frame_id == null) {
             if (!self.shared_memory.key_frames_mutex.tryLock()) {
                 return;
             }
-            defer self.shared_memory.key_frames_mutex.unlock();
             self.current_frame_id = self.shared_memory.key_frames.pop() orelse {
+                self.shared_memory.key_frames_mutex.unlock();
                 return;
             };
-            should_reinitialize = true;
+            self.shared_memory.key_frames_mutex.unlock();
+            self.start_frame_id = self.current_frame_id.?;
+            try self.reinitialize();
         }
 
-        var packet = self.shared_memory.frame_packet_buffer.getFramePacket(self.current_frame_id.?) orelse return;
-        defer packet.mutex.unlock();
+        var packet = self.shared_memory.frame_packet_buffer.getFramePacket(
+            self.current_frame_id.?,
+            .Packet,
+        ) orelse {
+            var frame = self.shared_memory.frame_packet_buffer.getFramePacket(
+                self.current_frame_id.?,
+                .Frame,
+            ) orelse return;
 
-        if (packet.packetFrame != .Packet or packet.is_key_frame) {
-            self.free();
+            if (frame.is_key_frame) {
+                frame.mutex.unlock();
+                try self.free();
+                return;
+            }
+            frame.mutex.unlock();
+            return;
+        };
+
+        if (packet.is_key_frame and self.start_frame_id != self.current_frame_id) {
+            packet.mutex.unlock();
+            try self.free();
             return;
         }
 
-        if (should_reinitialize) {
-            try self.reinitialize(packet.resolution);
+        try self.submitPacket(packet.frame_packet.Packet);
+        packet.mutex.unlock();
+        self.current_frame_id.? +%= 1;
+    }
+
+    fn submitPacket(self: *@This(), packet: ?*ffmpeg.AVPacket) !void {
+        var f = ffmpeg.av_frame_alloc();
+        if (f == null) {
+            return error.CouldNotAllocateFrame;
         }
 
-        var packet_data = packet.packetFrame.Packet;
-        defer ffmpeg.av_packet_free(@ptrCast(&packet_data));
+        try self.decoder.submitPacket(packet);
+        while (try self.decoder.getFrame(@ptrCast(&f))) {
+            const frame_id: u64 = @bitCast(f.*.pts);
 
-        // Decode the image and write it to the shared memory.
-        var frame = try self.decoder.getFrame(packet_data);
-        errdefer ffmpeg.av_frame_free(@ptrCast(&frame));
-        packet.packetFrame = .{ .Frame = frame };
+            var pkt = self.shared_memory.frame_packet_buffer.getFramePacket(
+                frame_id,
+                .Packet,
+            ) orelse return error.CouldNotGetFramePacket;
+            defer pkt.mutex.unlock();
+
+            var pkt_data = pkt.frame_packet.Packet;
+            defer ffmpeg.av_packet_free(@ptrCast(&pkt_data));
+
+            pkt.frame_packet_type.store(.Frame, .unordered);
+            pkt.frame_packet = .{ .Frame = f };
+
+            try self.writeFrame(f, pkt.timestamp);
+
+            f = ffmpeg.av_frame_alloc();
+            if (f == null) {
+                return error.CouldNotAllocateFrame;
+            }
+        }
+    }
+
+    fn writeFrame(self: *@This(), frame: *ffmpeg.AVFrame, timestamp: i64) !void {
+        std.debug.print("Height: {d}, Width: {d}\n", .{ frame.height, frame.width });
+        if (frame.data[0] == null) {
+            std.debug.print("Frame data is null\n", .{});
+            return;
+        }
+
+        const frame_id: u64 = @bitCast(frame.pts);
+
+        // Write the latency information to a file.
+        const current_time = std.time.milliTimestamp();
+        try self.stats_file.print("{d},{d}\n", .{ frame_id, current_time - timestamp });
 
         // Write the image to a file.
         var filename: [255]u8 = undefined;
         try self.png.write(
-            try std.fmt.bufPrint(filename[0..255], "Output/frame-{d}.png", .{self.current_frame_id.?}),
-            packet.resolution,
-            packet.packetFrame.Frame,
+            try std.fmt.bufPrint(
+                filename[0..255],
+                "Output/Frames/frame-{d}.png",
+                .{frame_id},
+            ),
+            frame,
         );
-
-        // Write the latency information to a file.
-        const writer = self.stats_file.writer();
-        const current_time = std.time.milliTimestamp();
-        try writer.print("{d},{d}\n", .{ self.current_frame_id.?, current_time - packet.timestamp });
     }
 };
 
@@ -92,12 +147,12 @@ const Player = struct {
     current_frame_id: u64,
     playback_speed: common.PlayBackSpeed,
     last_frame_time: i64,
-    stats_file: *std.fs.File,
+    stats_file: std.fs.File.Writer,
     scaler: *ffmpeg.SwsContext,
     frame: *ffmpeg.AVFrame,
     mp4: mp4.MP4,
 
-    pub fn init(shared_mem: *shared_memory.SharedMemory, stats_file: *std.fs.File) !@This() {
+    pub fn init(shared_mem: *shared_memory.SharedMemory, stats_file: std.fs.File.Writer) !@This() {
         const scaler = ffmpeg.sws_getContext(
             common.Resolution.@"1080p".getResolutionWidth(),
             @intFromEnum(common.Resolution.@"1080p"),
@@ -135,7 +190,7 @@ const Player = struct {
             .stats_file = stats_file,
             .scaler = scaler,
             .frame = frame,
-            .mp4 = try .init("Output/output.mp4", .@"1080p", .@"60"),
+            .mp4 = try .init("Output/output.mp4"),
         };
     }
 
@@ -149,12 +204,9 @@ const Player = struct {
         // Get the quit event
         // Use sdl events
 
-        var frame = self.shared_memory.frame_packet_buffer.getFramePacket(self.current_frame_id) orelse return;
+        // std.debug.print("[Player] Frame ID: {d}\n", .{self.current_frame_id});
+        var frame = self.shared_memory.frame_packet_buffer.getFramePacket(self.current_frame_id, .Frame) orelse return;
         defer frame.mutex.unlock();
-
-        if (frame.packetFrame != .Frame) {
-            return;
-        }
 
         const frame_time = frame.frame_rate.getFrameTime(self.playback_speed);
 
@@ -184,8 +236,8 @@ const Player = struct {
         ffmpeg.av_frame_unref(self.frame);
         if (ffmpeg.sws_scale(
             self.scaler,
-            &frame.packetFrame.Frame.*.data,
-            &frame.packetFrame.Frame.*.linesize,
+            &frame.frame_packet.Frame.*.data,
+            &frame.frame_packet.Frame.*.linesize,
             0,
             @intFromEnum(frame.resolution),
             &self.frame.*.data,
@@ -203,8 +255,8 @@ const Player = struct {
         }
 
         // Write the latency information to a file.
-        const writer = self.stats_file.writer();
-        try writer.print("{d},{d}\n", .{ self.current_frame_id, current_time - frame.timestamp });
+        try self.stats_file.print("{d},{d}\n", .{ self.current_frame_id, current_time - frame.timestamp });
+        std.debug.print("[Player] Frame ID: {d}, Latency: {d}\n", .{ self.current_frame_id, current_time - frame.timestamp });
     }
 };
 
@@ -225,18 +277,29 @@ pub const DecoderLoop = struct {
             return err;
         };
 
+        _ = folder.openDir("Frames", .{}) catch |err| blk: {
+            if (err == std.fs.File.OpenError.FileNotFound) {
+                try folder.makeDir("Frames");
+                break :blk null;
+            }
+            return err;
+        };
+
         var image_latency_file = try folder.createFile("image-latency.csv", .{});
         var playback_latency_file = try folder.createFile("playback-latency.csv", .{});
 
         var decoders: [NumberOfDecoders]OptimisticDecoder = undefined;
 
         for (0..NumberOfDecoders) |i| {
-            decoders[i] = try OptimisticDecoder.init(shared_mem, &image_latency_file);
+            decoders[i] = try OptimisticDecoder.init(
+                shared_mem,
+                image_latency_file.writer(),
+            );
         }
 
         const player = try Player.init(
             shared_mem,
-            &playback_latency_file,
+            playback_latency_file.writer(),
         );
 
         return .{
@@ -259,7 +322,8 @@ pub const DecoderLoop = struct {
     }
 
     pub fn run(self: *@This()) !void {
-        while (true) {
+        errdefer self.shared_memory.setCrashed();
+        while (!self.shared_memory.hasCrashed()) {
             for (0..NumberOfDecoders) |i| {
                 try self.decoders[i].decode();
             }

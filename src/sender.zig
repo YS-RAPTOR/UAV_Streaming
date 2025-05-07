@@ -177,12 +177,13 @@ pub fn main() !void {
                 .frame_rate = frame_rate,
                 .frame_number = frame_no,
             });
+
             no_of_packets += 1;
+            frame_no += 1;
         }
 
         std.debug.assert(no_of_packets <= 1);
 
-        frame_no += 1;
         // 15ms
         std.Thread.sleep(15 * 1000);
     }

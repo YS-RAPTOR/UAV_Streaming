@@ -87,18 +87,18 @@ pub fn main() !void {
     };
     defer decoder_loop.deinit();
 
-    // const thread = std.Thread.spawn(
-    //     .{
-    //         .allocator = allocator,
-    //         .stack_size = 16 * 1024 * 1024,
-    //     },
-    //     DecoderLoop.run,
-    //     .{&decoder_loop},
-    // ) catch |err| {
-    //     common.print("Error spawning thread: {}\n", .{err});
-    //     return;
-    // };
-    // defer thread.join();
+    const thread = std.Thread.spawn(
+        .{
+            .allocator = allocator,
+            .stack_size = 16 * 1024 * 1024,
+        },
+        DecoderLoop.run,
+        .{&decoder_loop},
+    ) catch |err| {
+        common.print("Error spawning thread: {}\n", .{err});
+        return;
+    };
+    defer thread.join();
 
     try transfer_loop.run();
 }

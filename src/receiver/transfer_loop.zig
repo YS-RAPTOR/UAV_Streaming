@@ -75,6 +75,7 @@ pub const TransferLoop = struct {
     }
 
     pub fn run(self: *@This()) !void {
+        errdefer self.shared_memory.setCrashed();
         var array: std.ArrayListUnmanaged(u8) = try .initCapacity(self.allocator, 70_000);
         array.appendNTimesAssumeCapacity(0, 70_000);
         defer array.deinit(self.allocator);
@@ -90,7 +91,7 @@ pub const TransferLoop = struct {
         try posix.bind(socket, &self.bind_address.any, self.bind_address.getOsSockLen());
         common.print("Listening...\n", .{});
 
-        while (true) {
+        while (!self.shared_memory.hasCrashed()) {
             self.receivePackets(socket, buffer) catch |err| {
                 common.print("Error receiving packets: {}\n", .{err});
                 return err;

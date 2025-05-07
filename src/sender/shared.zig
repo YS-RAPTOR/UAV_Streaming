@@ -53,6 +53,7 @@ pub const SharedMemory = struct {
         const chunk_size = data.len / no_of_splits;
         var chunk_remainder = data.len % no_of_splits;
 
+        var data_ptr = data.ptr;
         for (0..no_of_splits) |split| {
             const current_id = self.current_packet.load(.unordered);
             defer self.current_packet.store(current_id +% 1, .unordered);
@@ -61,12 +62,11 @@ pub const SharedMemory = struct {
 
             var slice: []u8 = undefined;
             slice.len = chunk_size;
-            slice.ptr = data.ptr + chunk_size * split;
-
             if (chunk_remainder > 0) {
                 slice.len += 1;
                 chunk_remainder -= 1;
             }
+            slice.ptr = data_ptr;
 
             self.committed_packets.items[index].header = header;
             self.committed_packets.items[index].header.id = current_id;
@@ -76,6 +76,8 @@ pub const SharedMemory = struct {
 
             @memcpy(self.committed_packets.items[index].data[0..slice.len], slice);
             self.committed_packets.items[index].initializeCrc();
+
+            data_ptr += slice.len;
         }
     }
 

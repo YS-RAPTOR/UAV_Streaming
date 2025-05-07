@@ -39,7 +39,7 @@ pub const Decoder = struct {
     pub fn init() !@This() {
         var self: @This() = undefined;
         self.codec = try findBestCodec();
-        try self.initialize(.@"1080p");
+        try self.initialize();
         return self;
     }
 
@@ -47,7 +47,7 @@ pub const Decoder = struct {
         ffmpeg.avcodec_free_context(@ptrCast(&self.context));
     }
 
-    pub fn initialize(self: *@This(), resolution: common.Resolution) !void {
+    pub fn initialize(self: *@This()) !void {
         self.context = blk: {
             const context = ffmpeg.avcodec_alloc_context3(self.codec);
             if (context == null) {
@@ -56,45 +56,26 @@ pub const Decoder = struct {
             break :blk context;
         };
         errdefer ffmpeg.avcodec_free_context(@ptrCast(&self.context));
-        self.context.width = resolution.getResolutionWidth();
-        self.context.height = @intFromEnum(resolution);
-        self.context.time_base = .{ .num = 1, .den = 60 };
-        self.context.framerate = .{ .num = 60, .den = 1 };
-        self.context.pix_fmt = ffmpeg.AV_PIX_FMT_YUV420P;
-        self.context.pkt_timebase = self.context.time_base;
-
         if (ffmpeg.avcodec_open2(self.context, self.codec, null) < 0) {
             return error.CouldNotOpenCodec;
         }
     }
 
-    pub fn getFrame(self: *@This(), packet: *ffmpeg.AVPacket) !*ffmpeg.AVFrame {
+    pub fn submitPacket(self: *@This(), packet: ?*ffmpeg.AVPacket) !void {
         if (ffmpeg.avcodec_send_packet(self.context, packet) < 0) {
             return error.CouldNotSendPacket;
         }
+    }
 
-        var frame = blk: {
-            const frame = ffmpeg.av_frame_alloc();
-            if (frame == null) {
-                return error.CouldNotAllocateFrame;
-            }
-            break :blk frame;
-        };
-        errdefer ffmpeg.av_frame_free(@ptrCast(&frame));
-
-        var ret: c_int = 1;
-        var no_of_frames: u8 = 0;
-        while (ret >= 0) {
-            ret = ffmpeg.avcodec_receive_frame(self.context, frame);
-            if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or ret == ffmpeg.AVERROR_EOF) {
-                break;
-            } else if (ret < 0) {
-                return error.CouldNotReceiveFrame;
-            }
-            no_of_frames += 1;
+    pub fn getFrame(self: *@This(), frame: **ffmpeg.AVFrame) !bool {
+        const ret = ffmpeg.avcodec_receive_frame(self.context, frame.*);
+        if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or ret == ffmpeg.AVERROR_EOF) {
+            ffmpeg.av_frame_free(@ptrCast(frame));
+            return false;
+        } else if (ret < 0) {
+            return error.CouldNotReceivePacket;
         }
 
-        std.debug.assert(no_of_frames == 1);
-        return frame;
+        return true;
     }
 };

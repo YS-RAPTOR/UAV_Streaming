@@ -30,6 +30,7 @@ fn create(
         .name = name,
         .root_module = module,
     });
+    exe.linkLibC();
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

@@ -5,6 +5,7 @@ const builtins = @import("builtin");
 const SharedMemory = @import("./receiver/shared.zig").SharedMemory;
 const TransferLoop = @import("./receiver/transfer_loop.zig").TransferLoop;
 const DecoderLoop = @import("./receiver/decoder_loop.zig").DecoderLoop;
+const ffmpeg = @import("ffmpeg");
 
 const ReceiverArguments = struct {
     send_address: []const u8,
@@ -25,15 +26,18 @@ const help =
     \\-b, --bind-address [addr]  Set the address that binds the sender to (default:127.0.0.1:2002)
 ;
 
-pub fn main() !void {
-    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-    const allocator, const is_debug = gpa: {
-        break :gpa switch (builtins.mode) {
-            .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
-            .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
-        };
-    };
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+const allocator = switch (builtins.mode) {
+    .Debug, .ReleaseSafe => debug_allocator.allocator(),
+    .ReleaseFast, .ReleaseSmall => std.heap.smp_allocator,
+};
 
+const is_debug = switch (builtins.mode) {
+    .Debug, .ReleaseSafe => true,
+    .ReleaseFast, .ReleaseSmall => false,
+};
+
+pub fn main() !void {
     defer if (is_debug) {
         _ = debug_allocator.deinit();
     };

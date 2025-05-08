@@ -6,7 +6,7 @@ pub const Image = struct {
     codec: *const ffmpeg.AVCodec,
     context: *ffmpeg.AVCodecContext,
     scaler: *ffmpeg.SwsContext,
-    frame: *ffmpeg.AVFrame,
+    frame: common.Frame,
     resolution: common.Resolution,
 
     pub fn init() !@This() {
@@ -16,9 +16,14 @@ pub const Image = struct {
             return error.CodecCouldNotBeFound;
         }
         self.codec = codec;
-
         try self.initialize(1080, false);
         return self;
+    }
+
+    pub fn deinit(self: *@This()) void {
+        ffmpeg.av_frame_free(@ptrCast(&self.frame));
+        ffmpeg.avcodec_free_context(@ptrCast(&self.context));
+        ffmpeg.sws_freeContext(self.scaler);
     }
 
     pub fn initialize(self: *@This(), height: u16, comptime is_initialized: bool) !void {
@@ -38,10 +43,6 @@ pub const Image = struct {
             break :blk context;
         };
         errdefer ffmpeg.avcodec_free_context(@ptrCast(&self.context));
-
-        // if (ffmpeg.av_opt_set_int(self.context, "compression_level", 0, 0) < 0) {
-        //     return error.CompressionLevelCouldNotBeSet;
-        // }
 
         const width: u16 = resolution.getResolutionWidth();
         self.context.*.width = width;
@@ -67,44 +68,22 @@ pub const Image = struct {
         ) orelse return error.ScalerCouldNotBeInitialize;
         errdefer ffmpeg.sws_freeContext(self.scaler);
 
-        self.frame = blk: {
-            const frame = ffmpeg.av_frame_alloc();
-            if (frame == null) {
-                return error.FrameCouldNotBeAllocated;
-            }
-            break :blk frame;
-        };
-        errdefer ffmpeg.av_frame_free(@ptrCast(&self.frame));
+        self.frame = try .init();
+        errdefer self.frame.deinit();
 
-        self.frame.*.width = width;
-        self.frame.*.height = height;
-        self.frame.*.format = ffmpeg.AV_PIX_FMT_RGB24;
-
-        if (ffmpeg.av_image_alloc(
-            &self.frame.*.data,
-            &self.frame.linesize,
-            width,
-            height,
-            ffmpeg.AV_PIX_FMT_RGB24,
-            32,
-        ) < 0) {
-            return error.FrameCouldNotBeAllocated;
-        }
+        self.frame.frame.*.width = width;
+        self.frame.frame.*.height = height;
+        self.frame.frame.*.format = ffmpeg.AV_PIX_FMT_BGR24;
     }
 
     pub fn write(self: *@This(), filename: []const u8, frame: *ffmpeg.AVFrame) !void {
         try self.initialize(@intCast(frame.*.height), true);
 
+        const scaled_frame = try self.frame.start();
+        defer self.frame.end();
+
         var current_time = std.time.milliTimestamp();
-        if (ffmpeg.sws_scale(
-            self.scaler,
-            &frame.*.data,
-            &frame.*.linesize,
-            0,
-            frame.*.height,
-            &self.frame.*.data,
-            &self.frame.*.linesize,
-        ) < 0) {
+        if (ffmpeg.sws_scale_frame(self.scaler, scaled_frame, frame) < 0) {
             return error.CouldNotScaleFrame;
         }
         var end_time = std.time.milliTimestamp();
@@ -112,7 +91,7 @@ pub const Image = struct {
         var packet: *ffmpeg.AVPacket = ffmpeg.av_packet_alloc() orelse return error.PacketCouldNotBeAllocated;
         defer ffmpeg.av_packet_free(@ptrCast(&packet));
 
-        if (ffmpeg.avcodec_send_frame(self.context, self.frame) < 0) {
+        if (ffmpeg.avcodec_send_frame(self.context, scaled_frame) < 0) {
             return error.CouldNotSendFrame;
         }
 
@@ -125,11 +104,5 @@ pub const Image = struct {
         try file.writeAll(packet.*.data[0..@intCast(packet.*.size)]);
         file.close();
         end_time = std.time.milliTimestamp();
-    }
-
-    pub fn deinit(self: *@This()) void {
-        ffmpeg.av_frame_free(@ptrCast(&self.frame));
-        ffmpeg.avcodec_free_context(@ptrCast(&self.context));
-        ffmpeg.sws_freeContext(self.scaler);
     }
 };

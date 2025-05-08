@@ -5,6 +5,7 @@ const common = @import("../common/common.zig");
 pub const Decoder = struct {
     codec: *const ffmpeg.AVCodec,
     context: *ffmpeg.AVCodecContext,
+    frame: common.Frame,
 
     fn findBestCodec() !*const ffmpeg.AVCodec {
         var codec = ffmpeg.avcodec_find_decoder_by_name("h264_cuvid");
@@ -39,12 +40,14 @@ pub const Decoder = struct {
     pub fn init() !@This() {
         var self: @This() = undefined;
         self.codec = try findBestCodec();
+        self.frame = try .init();
         try self.initialize();
         return self;
     }
 
     pub fn deinit(self: *@This()) void {
         ffmpeg.avcodec_free_context(@ptrCast(&self.context));
+        self.frame.deinit();
     }
 
     pub fn initialize(self: *@This()) !void {
@@ -64,21 +67,31 @@ pub const Decoder = struct {
         }
     }
 
+    pub fn reinitialize(self: *@This()) !void {
+        ffmpeg.avcodec_free_context(@ptrCast(&self.context));
+        try self.initialize();
+    }
+
     pub fn submitPacket(self: *@This(), packet: ?*ffmpeg.AVPacket) !void {
         if (ffmpeg.avcodec_send_packet(self.context, packet) < 0) {
             return error.CouldNotSendPacket;
         }
     }
 
-    pub fn getFrame(self: *@This(), frame: **ffmpeg.AVFrame) !bool {
-        const ret = ffmpeg.avcodec_receive_frame(self.context, frame.*);
+    pub fn getFrame(self: *@This()) !?*ffmpeg.AVFrame {
+        const frame = try self.frame.start();
+
+        const ret = ffmpeg.avcodec_receive_frame(self.context, frame);
         if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or ret == ffmpeg.AVERROR_EOF) {
-            ffmpeg.av_frame_free(@ptrCast(frame));
-            return false;
+            self.frame.end();
+            return null;
         } else if (ret < 0) {
             return error.CouldNotReceivePacket;
         }
+        return frame;
+    }
 
-        return true;
+    pub fn endFrame(self: *@This()) void {
+        self.frame.end();
     }
 };

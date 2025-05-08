@@ -14,13 +14,12 @@ pub const FramePacket = struct {
     frame_packet_type: std.atomic.Value(FramePacketType),
     frame_packet: union {
         Packet: *ffmpeg.AVPacket,
-        Frame: *ffmpeg.AVFrame,
         None: void,
     },
 
     const FramePacketType = enum(u8) {
         Packet,
-        Frame,
+        PacketWritten,
         None,
     };
 
@@ -77,9 +76,7 @@ pub const FramePacket = struct {
 
     fn deinit(self: *@This()) void {
         const frame_packet_type = self.frame_packet_type.load(.unordered);
-        if (frame_packet_type == .Frame) {
-            ffmpeg.av_frame_free(@ptrCast(&self.frame_packet.Frame));
-        } else if (frame_packet_type == .Packet) {
+        if (frame_packet_type != .None) {
             ffmpeg.av_packet_free(@ptrCast(&self.frame_packet.Packet));
         }
     }
@@ -152,7 +149,7 @@ pub const FramePacketBuffer = struct {
 };
 
 pub const SharedMemory = struct {
-    pub const NumberOfDecoders = 1;
+    pub const NumberOfDecoders = 2;
 
     is_stopping: std.atomic.Value(bool),
     has_crashed: std.atomic.Value(bool),
@@ -206,6 +203,7 @@ pub const SharedMemory = struct {
         try self.frame_packet_buffer.addPacket(self.allocator, packets, total_size);
 
         if (packets[0].header.is_key_frame) {
+            std.debug.print("Key Frame: {}\n", .{packets[0].header.frame_number});
             try self.key_frames[self.current_queue].append(packets[0].header.frame_number);
             self.current_queue = (self.current_queue + 1) % NumberOfDecoders;
         }

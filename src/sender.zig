@@ -130,6 +130,8 @@ pub fn main() !void {
 
     common.print("Starting Video Encode...\n", .{});
     while (true) {
+        defer std.Thread.sleep(8000000);
+
         if (!shared_memory.isRunning()) {
             break;
         }
@@ -183,9 +185,6 @@ pub fn main() !void {
         }
 
         std.debug.assert(no_of_packets <= 1);
-
-        // 15ms
-        std.Thread.sleep(15 * 1000);
     }
     thread.join();
 }

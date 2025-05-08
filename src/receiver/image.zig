@@ -3,6 +3,10 @@ const common = @import("../common/common.zig");
 const std = @import("std");
 
 pub const Image = struct {
+    const ScalerOutputPixelFormat: c_int = ffmpeg.AV_PIX_FMT_YUV420P;
+    const CodecOutputPixelFormat: c_int = ffmpeg.AV_PIX_FMT_YUVJ420P;
+    const Codec: c_int = ffmpeg.AV_CODEC_ID_MJPEG;
+
     codec: *const ffmpeg.AVCodec,
     context: *ffmpeg.AVCodecContext,
     scaler: *ffmpeg.SwsContext,
@@ -11,7 +15,7 @@ pub const Image = struct {
 
     pub fn init() !@This() {
         var self: @This() = undefined;
-        const codec = ffmpeg.avcodec_find_encoder(ffmpeg.AV_CODEC_ID_BMP);
+        const codec = ffmpeg.avcodec_find_encoder(Codec);
         if (codec == null) {
             return error.CodecCouldNotBeFound;
         }
@@ -47,8 +51,12 @@ pub const Image = struct {
         const width: u16 = resolution.getResolutionWidth();
         self.context.*.width = width;
         self.context.*.height = height;
-        self.context.*.pix_fmt = ffmpeg.AV_PIX_FMT_BGR24;
+        self.context.*.pix_fmt = CodecOutputPixelFormat;
         self.context.*.time_base = .{ .num = 1, .den = 1 };
+
+        // if (ffmpeg.av_opt_set_int(self.context, "compression_level", 0, 0) < 0) {
+        //     return error.CouldNotSetOption;
+        // }
 
         if (ffmpeg.avcodec_open2(self.context, self.codec, null) < 0) {
             return error.CouldNotOpenCodec;
@@ -60,7 +68,7 @@ pub const Image = struct {
             ffmpeg.AV_PIX_FMT_NV12,
             width,
             height,
-            ffmpeg.AV_PIX_FMT_BGR24,
+            ScalerOutputPixelFormat,
             ffmpeg.SWS_FAST_BILINEAR,
             null,
             null,
@@ -73,7 +81,8 @@ pub const Image = struct {
 
         self.frame.frame.*.width = width;
         self.frame.frame.*.height = height;
-        self.frame.frame.*.format = ffmpeg.AV_PIX_FMT_BGR24;
+        self.frame.frame.*.format = ScalerOutputPixelFormat;
+        self.frame.frame.*.color_range = ffmpeg.AVCOL_RANGE_JPEG;
     }
 
     pub fn write(self: *@This(), filename: []const u8, frame: *ffmpeg.AVFrame) !void {

@@ -123,7 +123,7 @@ const OptimisticDecoder = struct {
         try self.img.write(
             try std.fmt.bufPrint(
                 filename[0..255],
-                "Output/Frames/frame-{d}.png",
+                "Output/Frames/frame-{d}.jpg",
                 .{frame_id},
             ),
             frame,

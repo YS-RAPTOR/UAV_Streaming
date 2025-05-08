@@ -149,7 +149,7 @@ pub const FramePacketBuffer = struct {
 };
 
 pub const SharedMemory = struct {
-    pub const NumberOfDecoders = 2;
+    pub const NumberOfDecoders = 5;
 
     is_stopping: std.atomic.Value(bool),
     has_crashed: std.atomic.Value(bool),
@@ -195,7 +195,7 @@ pub const SharedMemory = struct {
             total_size += packet.header.size;
         }
 
-        if (packets[0].header.frame_number >= 10 * 60 * 60) {
+        if (packets[0].header.frame_number >= 12500) {
             // std.debug.print("Stopping receiver thread\n", .{});
             self.stop();
         }

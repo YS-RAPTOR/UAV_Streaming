@@ -2,16 +2,16 @@ const std = @import("std");
 const ffmpeg = @import("ffmpeg");
 const common = @import("./common/common.zig");
 const parse = @import("./common/parse.zig");
-const pipeline = @import("./sender/pipeline.zig");
 const SharedMemory = @import("./sender/shared.zig").SharedMemory;
 const TransferLoop = @import("./sender/transfer_loop.zig").TransferLoop;
+const encoder_loop = @import("./sender/encoder_loop.zig");
 
 const builtins = @import("builtin");
 
 const SenderArguments = struct {
     resolution: common.Resolution,
     frame_rate: common.FrameRate,
-    pipeline: pipeline.SupportedPipelines,
+    type: encoder_loop.SupportedTypes,
     device: []const u8,
     send_address: []const u8,
     bind_address: []const u8,
@@ -19,8 +19,7 @@ const SenderArguments = struct {
     pub const default: SenderArguments = .{
         .resolution = .@"1080p",
         .frame_rate = .@"60",
-        // TEST: Change to Camera after testing
-        .pipeline = .Test,
+        .type = .Test,
         .device = "/dev/video0",
         .send_address = "127.0.0.1:2003",
         .bind_address = "127.0.0.1:2002",
@@ -33,7 +32,7 @@ const help =
     \\      2160p, 1440p, 1080p, 720p, 480p, 360p
     \\-f, --frame-rate [rate]    Sets the max frame rate (default: 60)
     \\      60, 30
-    \\-p, --pipeline [src]       Set the source type (default: Camera)
+    \\-p, --type [src]           Set the source type (default: Test)
     \\      EncodedCamera, Test
     \\-d, --device [device]      Set the camera device name (default: /dev/video0)
     \\-s, --send-address [addr]  Set the video address to send the video to (default: 127.0.0.1:2003)
@@ -65,16 +64,6 @@ pub fn main() !void {
         return;
     };
 
-    var pl = pipeline.Pipeline.init(
-        arguements.pipeline,
-        arguements.resolution,
-        arguements.frame_rate,
-    ) catch |err| {
-        common.print("Error initializing pipeline: {}\n", .{err});
-        return;
-    };
-    defer pl.deinit();
-
     var shared_memory = SharedMemory.init(
         allocator,
         arguements.resolution,
@@ -84,6 +73,15 @@ pub fn main() !void {
         return;
     };
     defer shared_memory.deinit();
+
+    var enc = try encoder_loop.EncoderLoop.init(
+        arguements.type,
+        &shared_memory,
+        arguements.resolution,
+        arguements.frame_rate,
+        arguements.device,
+    );
+    defer enc.deinit();
 
     const send_address, const send_port = parse.getAddress(
         arguements.send_address,
@@ -123,68 +121,6 @@ pub fn main() !void {
         return;
     };
 
-    var count: u32 = 0;
-    var frame_no: u64 = 0;
-
-    while (!shared_memory.isRunning()) {}
-
-    common.print("Starting Video Encode...\n", .{});
-    while (true) {
-        defer std.Thread.sleep(8000000);
-
-        if (!shared_memory.isRunning()) {
-            break;
-        }
-
-        errdefer shared_memory.crash();
-        defer count +%= 1;
-
-        const resolution, const frame_rate = blk: {
-            const s = shared_memory.getSettings();
-            try pl.changeSettings(s.resolution, s.frame_rate);
-            break :blk pl.getSettings();
-        };
-
-        const should_skip = frame_rate == .@"30" and count % 2 == 0;
-        if (!try pl.start(!should_skip)) {
-            break;
-        }
-        defer pl.end();
-
-        // if (count > 100) {
-        //     shared_memory.crash();
-        //     break;
-        // }
-
-        if (should_skip) {
-            continue;
-        }
-
-        var no_of_packets: u8 = 0;
-        while (try pl.getPacket()) |packet| {
-            var data: []u8 = undefined;
-            data.len = @intCast(packet.size);
-            data.ptr = packet.data;
-
-            shared_memory.insertPackets(data, .{
-                .id = 0,
-                .no_of_splits = 0,
-                .parent_offset = 0,
-                .size = 0,
-                .crc = 0,
-
-                .is_key_frame = (packet.flags & ffmpeg.AV_PKT_FLAG_KEY) != 0,
-                .generated_timestamp = std.time.milliTimestamp(),
-                .resolution = resolution,
-                .frame_rate = frame_rate,
-                .frame_number = frame_no,
-            });
-
-            no_of_packets += 1;
-            frame_no += 1;
-        }
-
-        std.debug.assert(no_of_packets <= 1);
-    }
+    try enc.run();
     thread.join();
 }

@@ -79,14 +79,13 @@ pub const TestSource = struct {
         };
     }
 
-    pub inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !bool {
+    pub inline fn fillFrame(self: *@This(), frame: *ffmpeg.AVFrame) !void {
         const ret = ffmpeg.av_buffersink_get_frame(self.sink, frame);
         if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or ret == ffmpeg.AVERROR_EOF) {
-            return false;
+            return error.SourceStopped;
         } else if (ret < 0) {
             return error.CouldNotGetFrame;
         }
-        return true;
     }
 
     pub inline fn deinit(self: *@This()) void {

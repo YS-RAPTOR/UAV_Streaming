@@ -42,81 +42,45 @@ pub const H264Codec = struct {
     }
 
     pub fn init(resolution: common.Resolution, frame_rate: common.FrameRate) !@This() {
-        const codec = H264Codec.findBestCodec() catch |err| {
-            common.print("Error finding codec: H264\n", .{});
-            return err;
+        var self: @This() = .{
+            .codec = findBestCodec() catch |err| {
+                common.print("Error finding codec: H264\n", .{});
+                return err;
+            },
+            .context = undefined,
         };
 
-        var context = ffmpeg.avcodec_alloc_context3(codec);
-        if (context == null) {
-            return error.CouldNotAllocateCodecContext;
-        }
+        try self.initialize(resolution, frame_rate);
+        return self;
+    }
 
-        // TODO: CHECK IF NEEDED
-        // if (ffmpeg.av_opt_set(context.*.priv_data, "repeat-headers", "1", 0) < 0) {
-        //     return error.CouldNotSetCodecOptions;
-        // }
+    pub fn initialize(self: *@This(), resolution: common.Resolution, frame_rate: common.FrameRate) !void {
+        self.context = blk: {
+            const context = ffmpeg.avcodec_alloc_context3(self.codec);
+            if (context == null) {
+                return error.CouldNotAllocateCodecContext;
+            }
+            break :blk context;
+        };
+        errdefer ffmpeg.avcodec_free_context(@ptrCast(&self.context));
 
-        errdefer ffmpeg.avcodec_free_context(&context);
+        self.context.*.width = @intCast(resolution.getResolutionWidth());
+        self.context.*.height = @intCast(@intFromEnum(resolution));
+        self.context.*.time_base = .{ .num = 1, .den = @intCast(@intFromEnum(frame_rate)) };
+        self.context.*.framerate = .{ .num = @intCast(@intFromEnum(frame_rate)), .den = 1 };
+        self.context.*.pix_fmt = ffmpeg.AV_PIX_FMT_YUV420P;
+        self.context.*.bit_rate = @intCast(common.getMegaBitRate(resolution, frame_rate) * 1024 * 1024);
 
-        context.*.width = @intCast(resolution.getResolutionWidth());
-        context.*.height = @intCast(@intFromEnum(resolution));
-        context.*.time_base = .{ .num = 1, .den = @intCast(@intFromEnum(frame_rate)) };
-        context.*.framerate = .{ .num = @intCast(@intFromEnum(frame_rate)), .den = 1 };
-        context.*.pix_fmt = ffmpeg.AV_PIX_FMT_YUV420P;
-        context.*.bit_rate = @intCast(common.getMegaBitRate(resolution, frame_rate) * 1024 * 1024);
-
-        // _ = ffmpeg.av_opt_set(context.*.priv_data, "preset", "ultrafast", 0);
-        // _ = ffmpeg.av_opt_set(context.*.priv_data, "tune", "zerolatency", 0);
-
-        if (ffmpeg.avcodec_open2(context, codec, null) < 0) {
+        if (ffmpeg.avcodec_open2(self.context, self.codec, null) < 0) {
             return error.CouldNotOpenCodec;
         }
-
-        return .{
-            .codec = codec,
-            .context = context,
-        };
     }
 
     pub fn deinit(self: *@This()) void {
         ffmpeg.avcodec_free_context(@ptrCast(&self.context));
     }
 
-    const PacketIterator = struct {
-        ret: isize,
-        context: *ffmpeg.AVCodecContext,
-        packet: common.Packet,
-        start: bool,
-
-        pub fn init(packet: common.Packet, context: *ffmpeg.AVCodecContext) !@This() {
-            return .{
-                .ret = 0,
-                .context = context,
-                .packet = packet,
-                .start = false,
-            };
-        }
-
-        pub inline fn next(self: *@This()) !?*ffmpeg.AVPacket {
-            if (self.start) {
-                @branchHint(.unlikely);
-                self.packet.end();
-            }
-            self.start = true;
-
-            self.ret = ffmpeg.avcodec_receive_packet(self.context, try self.packet.start());
-            if (self.ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) or self.ret == ffmpeg.AVERROR_EOF) {
-                return null;
-            } else if (self.ret < 0) {
-                return error.CouldNotReceivePacket;
-            }
-
-            return self.packet.packet;
-        }
-    };
-
-    pub fn submitFrame(self: *@This(), frame: *ffmpeg.AVFrame) !void {
+    pub fn submitFrame(self: *@This(), frame: ?*ffmpeg.AVFrame) !void {
         const ret = ffmpeg.avcodec_send_frame(self.context, frame);
         if (ret < 0) {
             return error.CouldNotSendFrame;

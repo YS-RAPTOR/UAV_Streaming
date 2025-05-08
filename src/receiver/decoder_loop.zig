@@ -1,28 +1,34 @@
 const std = @import("std");
 const common = @import("../common/common.zig");
 const shared_memory = @import("shared.zig");
-const sdl = @import("sdl");
 const ffmpeg = @import("ffmpeg");
 const mp4 = @import("mp4.zig");
-const png = @import("png.zig");
+const Image = @import("image.zig").Image;
 const decoder = @import("decoder.zig");
 
 const OptimisticDecoder = struct {
     current_frame_id: ?u64, //null means it is free.
     start_frame_id: u64,
     shared_memory: *shared_memory.SharedMemory,
-    stats_file: std.fs.File.Writer,
-    png: png.PNG,
+    stats_writer: std.fs.File.Writer,
+    stats_file: std.fs.File,
+    img: Image,
     decoder: decoder.Decoder,
+    decoder_id: u8,
 
-    pub fn init(shared_mem: *shared_memory.SharedMemory, stats_file: std.fs.File.Writer) !@This() {
+    pub fn init(id: u8, folder: std.fs.Dir, shared_mem: *shared_memory.SharedMemory) !@This() {
+        var buffer: [255]u8 = undefined;
+        var stats_file = try folder.createFile(try std.fmt.bufPrint(&buffer, "image-latency-{}.csv", .{id}), .{});
+
         return .{
             .shared_memory = shared_mem,
             .start_frame_id = 0,
             .current_frame_id = null,
+            .stats_writer = stats_file.writer(),
             .stats_file = stats_file,
-            .png = try .init(),
+            .img = try .init(),
             .decoder = try .init(),
+            .decoder_id = id,
         };
     }
 
@@ -38,13 +44,21 @@ const OptimisticDecoder = struct {
     }
 
     pub fn deinit(self: *@This()) void {
-        self.png.deinit();
+        self.img.deinit();
         self.decoder.deinit();
+        self.stats_file.close();
+    }
+
+    pub fn run(self: *@This(), stop_signal: *std.atomic.Value(bool)) !void {
+        errdefer self.shared_memory.setCrashed();
+        while (!stop_signal.load(.unordered)) {
+            try self.decode();
+        }
     }
 
     pub fn decode(self: *@This()) !void {
         if (self.current_frame_id == null) {
-            self.current_frame_id = self.shared_memory.key_frames.pop() orelse {
+            self.current_frame_id = self.shared_memory.key_frames[self.decoder_id].pop() orelse {
                 return;
             };
             self.start_frame_id = self.current_frame_id.?;
@@ -97,8 +111,6 @@ const OptimisticDecoder = struct {
             ) orelse return error.CouldNotGetFramePacket;
             defer pkt.mutex.unlock();
 
-            std.debug.print("Decoder: Frame ID: {d}\n", .{frame_id});
-
             var pkt_data = pkt.frame_packet.Packet;
             defer ffmpeg.av_packet_free(@ptrCast(&pkt_data));
 
@@ -119,11 +131,11 @@ const OptimisticDecoder = struct {
 
         // Write the latency information to a file.
         const current_time = std.time.milliTimestamp();
-        try self.stats_file.print("{d},{d}\n", .{ frame_id, current_time - timestamp });
+        try self.stats_writer.print("{d},{d}\n", .{ frame_id, current_time - timestamp });
 
         // Write the image to a file.
         var filename: [255]u8 = undefined;
-        try self.png.write(
+        try self.img.write(
             try std.fmt.bufPrint(
                 filename[0..255],
                 "Output/Frames/frame-{d}.png",
@@ -249,16 +261,21 @@ const Player = struct {
         // Write the latency information to a file.
         try self.stats_file.print("{d},{d}\n", .{ self.current_frame_id, current_time - frame.timestamp });
         std.debug.print("Player: Frame ID: {d}\n", .{self.current_frame_id});
+
+        frame.frame_packet_type.store(.None, .unordered);
+        ffmpeg.av_frame_free(@ptrCast(&frame.frame_packet.Frame));
+        frame.frame_packet = .{ .None = {} };
     }
 };
 
 pub const DecoderLoop = struct {
-    const NumberOfDecoders = 5;
+    const NumberOfDecoders = shared_memory.SharedMemory.NumberOfDecoders;
+
     decoders: [NumberOfDecoders]OptimisticDecoder,
     shared_memory: *shared_memory.SharedMemory,
     player: Player,
-    image_latency_file: std.fs.File,
     playback_latency_file: std.fs.File,
+    stop_decoders: std.atomic.Value(bool),
 
     pub fn init(shared_mem: *shared_memory.SharedMemory) !@This() {
         var folder = std.fs.cwd().openDir("Output", .{}) catch |err| blk: {
@@ -277,15 +294,15 @@ pub const DecoderLoop = struct {
             return err;
         };
 
-        var image_latency_file = try folder.createFile("image-latency.csv", .{});
         var playback_latency_file = try folder.createFile("playback-latency.csv", .{});
 
         var decoders: [NumberOfDecoders]OptimisticDecoder = undefined;
 
         for (0..NumberOfDecoders) |i| {
             decoders[i] = try OptimisticDecoder.init(
+                @intCast(i),
+                folder,
                 shared_mem,
-                image_latency_file.writer(),
             );
         }
 
@@ -297,9 +314,9 @@ pub const DecoderLoop = struct {
         return .{
             .decoders = decoders,
             .player = player,
-            .image_latency_file = image_latency_file,
             .playback_latency_file = playback_latency_file,
             .shared_memory = shared_mem,
+            .stop_decoders = .init(false),
         };
     }
 
@@ -309,23 +326,34 @@ pub const DecoderLoop = struct {
         }
 
         self.player.deinit();
-        self.image_latency_file.close();
         self.playback_latency_file.close();
     }
 
     pub fn run(self: *@This()) !void {
         errdefer self.shared_memory.setCrashed();
+
+        var stop_signal = std.atomic.Value(bool).init(false);
+        var threads: [NumberOfDecoders]std.Thread = undefined;
+        for (0..NumberOfDecoders) |i| {
+            threads[i] = try std.Thread.spawn(.{
+                .allocator = self.shared_memory.allocator,
+                .stack_size = 16 * 1024 * 1024,
+            }, OptimisticDecoder.run, .{ &self.decoders[i], &stop_signal });
+        }
+
         while (!self.shared_memory.hasCrashed()) {
-            for (0..NumberOfDecoders) |i| {
-                try self.decoders[i].decode();
-            }
             try self.player.render();
 
             if (self.shared_memory.isStopping() and
                 self.shared_memory.no_of_frames_received.load(.unordered) +% 1 == self.player.current_frame_id)
             {
+                stop_signal.store(true, .seq_cst);
                 break;
             }
+        }
+
+        for (0..NumberOfDecoders) |i| {
+            threads[i].join();
         }
     }
 };

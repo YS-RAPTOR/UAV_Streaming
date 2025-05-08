@@ -3,8 +3,8 @@ const std = @import("std");
 pub fn Queue(comptime T: type, comptime Size: comptime_int) type {
     return struct {
         data: []T,
-        head: std.atomic.Value(u16),
-        tail: std.atomic.Value(u16),
+        head: std.atomic.Value(u8),
+        tail: std.atomic.Value(u8),
 
         pub fn init(allocator: std.mem.Allocator) !@This() {
             return .{

@@ -2,7 +2,7 @@ const ffmpeg = @import("ffmpeg");
 const common = @import("../common/common.zig");
 const std = @import("std");
 
-pub const PNG = struct {
+pub const Image = struct {
     codec: *const ffmpeg.AVCodec,
     context: *ffmpeg.AVCodecContext,
     scaler: *ffmpeg.SwsContext,
@@ -11,7 +11,7 @@ pub const PNG = struct {
 
     pub fn init() !@This() {
         var self: @This() = undefined;
-        const codec = ffmpeg.avcodec_find_encoder(ffmpeg.AV_CODEC_ID_PNG);
+        const codec = ffmpeg.avcodec_find_encoder(ffmpeg.AV_CODEC_ID_BMP);
         if (codec == null) {
             return error.CodecCouldNotBeFound;
         }
@@ -39,10 +39,14 @@ pub const PNG = struct {
         };
         errdefer ffmpeg.avcodec_free_context(@ptrCast(&self.context));
 
+        // if (ffmpeg.av_opt_set_int(self.context, "compression_level", 0, 0) < 0) {
+        //     return error.CompressionLevelCouldNotBeSet;
+        // }
+
         const width: u16 = resolution.getResolutionWidth();
         self.context.*.width = width;
         self.context.*.height = height;
-        self.context.*.pix_fmt = ffmpeg.AV_PIX_FMT_RGB24;
+        self.context.*.pix_fmt = ffmpeg.AV_PIX_FMT_BGR24;
         self.context.*.time_base = .{ .num = 1, .den = 1 };
 
         if (ffmpeg.avcodec_open2(self.context, self.codec, null) < 0) {
@@ -55,7 +59,7 @@ pub const PNG = struct {
             ffmpeg.AV_PIX_FMT_NV12,
             width,
             height,
-            ffmpeg.AV_PIX_FMT_RGB24,
+            ffmpeg.AV_PIX_FMT_BGR24,
             ffmpeg.SWS_FAST_BILINEAR,
             null,
             null,
@@ -91,6 +95,7 @@ pub const PNG = struct {
     pub fn write(self: *@This(), filename: []const u8, frame: *ffmpeg.AVFrame) !void {
         try self.initialize(@intCast(frame.*.height), true);
 
+        var current_time = std.time.milliTimestamp();
         if (ffmpeg.sws_scale(
             self.scaler,
             &frame.*.data,
@@ -102,6 +107,7 @@ pub const PNG = struct {
         ) < 0) {
             return error.CouldNotScaleFrame;
         }
+        var end_time = std.time.milliTimestamp();
 
         var packet: *ffmpeg.AVPacket = ffmpeg.av_packet_alloc() orelse return error.PacketCouldNotBeAllocated;
         defer ffmpeg.av_packet_free(@ptrCast(&packet));
@@ -113,10 +119,12 @@ pub const PNG = struct {
         if (ffmpeg.avcodec_receive_packet(self.context, packet) < 0) {
             return error.CouldNotReceivePacket;
         }
+        current_time = std.time.milliTimestamp();
 
         const file = try std.fs.cwd().createFile(filename, .{ .exclusive = true });
         try file.writeAll(packet.*.data[0..@intCast(packet.*.size)]);
         file.close();
+        end_time = std.time.milliTimestamp();
     }
 
     pub fn deinit(self: *@This()) void {

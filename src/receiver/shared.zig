@@ -39,9 +39,7 @@ pub const FramePacket = struct {
         defer self.mutex.unlock();
 
         const frame_packet_type = self.frame_packet_type.load(.unordered);
-        if (frame_packet_type == .Frame) {
-            ffmpeg.av_frame_free(@ptrCast(&self.frame_packet.Frame));
-        } else if (frame_packet_type == .Packet) {
+        if (frame_packet_type != .None) {
             std.debug.print("Packet Identifier: {}\n", .{packet.header.frame_number});
             unreachable;
         }
@@ -154,20 +152,29 @@ pub const FramePacketBuffer = struct {
 };
 
 pub const SharedMemory = struct {
+    pub const NumberOfDecoders = 1;
+
     is_stopping: std.atomic.Value(bool),
     has_crashed: std.atomic.Value(bool),
     frame_packet_buffer: FramePacketBuffer,
     allocator: std.mem.Allocator,
     no_of_frames_received: std.atomic.Value(u64),
 
-    key_frames: Queue(u64, 2048),
+    key_frames: [NumberOfDecoders]Queue(u64, 255),
+    current_queue: u8,
 
     pub inline fn init(allocator: std.mem.Allocator) !SharedMemory {
+        var keyframes: [NumberOfDecoders]Queue(u64, 255) = undefined;
+        for (0..NumberOfDecoders) |i| {
+            keyframes[i] = try Queue(u64, 255).init(allocator);
+        }
+
         return SharedMemory{
             .is_stopping = std.atomic.Value(bool).init(false),
             .frame_packet_buffer = try .init(allocator, 5),
             .allocator = allocator,
-            .key_frames = try .init(allocator),
+            .key_frames = keyframes,
+            .current_queue = 0,
             .no_of_frames_received = .init(0),
             .has_crashed = .init(false),
         };
@@ -175,7 +182,9 @@ pub const SharedMemory = struct {
 
     pub inline fn deinit(self: *@This()) void {
         self.frame_packet_buffer.deinit(self.allocator);
-        self.key_frames.deinit(self.allocator);
+        for (0..NumberOfDecoders) |i| {
+            self.key_frames[i].deinit(self.allocator);
+        }
     }
 
     pub fn addPacket(self: *@This(), packets: []udp.UdpSenderPacket) !bool {
@@ -197,7 +206,8 @@ pub const SharedMemory = struct {
         try self.frame_packet_buffer.addPacket(self.allocator, packets, total_size);
 
         if (packets[0].header.is_key_frame) {
-            try self.key_frames.append(packets[0].header.frame_number);
+            try self.key_frames[self.current_queue].append(packets[0].header.frame_number);
+            self.current_queue = (self.current_queue + 1) % NumberOfDecoders;
         }
 
         _ = self.no_of_frames_received.fetchAdd(1, .acq_rel);

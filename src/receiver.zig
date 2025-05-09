@@ -13,10 +13,10 @@ const ReceiverArguments = struct {
 
     pub const default: @This() = .{
         // TODO: Change when testing
-        .send_address = "127.0.0.1:2002",
-        .bind_address = "127.0.0.1:2003",
-        // .send_address = "127.0.0.1:2003",
-        // .bind_address = "127.0.0.1:2004",
+        // .send_address = "127.0.0.1:2002",
+        // .bind_address = "127.0.0.1:2003",
+        .send_address = "127.0.0.1:2003",
+        .bind_address = "127.0.0.1:2004",
     };
 };
 

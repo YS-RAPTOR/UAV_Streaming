@@ -147,8 +147,14 @@ const TestEncoderLoop = struct {
 
             {
                 const settings = self.shared_memory.getSettings();
+
+                if (self.frame_rate != settings.frame_rate) {
+                    std.debug.print("Changing Frame Rate to: {}", .{@intFromEnum(settings.frame_rate)});
+                }
+
                 self.frame_rate = settings.frame_rate;
                 if (self.resolution != settings.resolution) {
+                    std.debug.print("Changing Resolution to {}", .{@intFromEnum(settings.resolution)});
                     try self.reinitialize(settings.resolution);
                 }
             }

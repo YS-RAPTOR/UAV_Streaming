@@ -336,7 +336,7 @@ pub const TransferLoop = struct {
             frame_rate = common.FrameRate.@"30";
         }
 
-        // Resolutions_available are 2160p, 1440p, 1080p, 720p, 480p, 360p
+        // Resolutions_available are 1080p, 720p, 480p, 360p
         if (bandwidth > 1000) {
             resolution = common.Resolution.@"1080p";
         } else if (bandwidth > 500) {

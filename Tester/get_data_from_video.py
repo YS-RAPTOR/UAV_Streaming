@@ -32,7 +32,11 @@ def parse_time(time: str) -> int | None:
         return None
 
     if hours < 12 and minutes < 60 and seconds < 60 and milliseconds < 1000:
-        return (hours * 60 * 60 + minutes * 60 + seconds) * 1000 + milliseconds
+        latency = (hours * 60 * 60 + minutes * 60 + seconds) * 1000 + milliseconds
+        if latency >= 0:
+            return latency
+        else:
+            return None
 
     return None
 
@@ -65,18 +69,25 @@ def create_latency_measurements(folder: Path):
     mp4_path = folder / "out.mp4"
     output_path = folder / "latency.csv"
     video = cv2.VideoCapture(str(mp4_path))
-    frame_count = 0
+    frame_count = -1
 
     with open(output_path, "w") as f:
         while True:
+            frame_count += 1
             ret, frame = video.read()
             if not ret:
                 break
 
+            if frame_count % 30 != 0:
+                continue
+
             latency = get_latency(frame)
             if latency is not None:
                 f.write(f"{frame_count},{latency}\n")
-            frame_count += 1
+            if frame_count % 100 == 0:
+                print(
+                    f"Processing {folder}. Frames processed: {frame_count}/18000 frames"
+                )
 
 
 root = Path("./Runs/")
@@ -86,6 +97,4 @@ for path, _, files in root.walk():
     if "out.mp4" not in files:
         continue
 
-    print(f"Processing {path}")
     create_latency_measurements(path)
-    break

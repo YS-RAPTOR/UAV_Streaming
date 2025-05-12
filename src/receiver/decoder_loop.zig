@@ -59,7 +59,6 @@ const OptimisticDecoder = struct {
             if (self.current_packet_id == null) {
                 self.current_packet_id = self.keyframe_queue.pop() orelse continue;
                 self.start_packet_id = self.current_packet_id.?;
-                std.debug.print("Assigned packet id: {}\n", .{self.start_packet_id});
                 try self.reinitialize();
             }
 

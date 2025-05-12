@@ -195,15 +195,13 @@ pub const SharedMemory = struct {
             total_size += packet.header.size;
         }
 
-        if (packets[0].header.frame_number >= 12500) {
-            // std.debug.print("Stopping receiver thread\n", .{});
+        if (packets[0].header.frame_number >= 5 * 60 * 60) {
             self.stop();
         }
 
         try self.frame_packet_buffer.addPacket(self.allocator, packets, total_size);
 
         if (packets[0].header.is_key_frame) {
-            std.debug.print("Key Frame: {}\n", .{packets[0].header.frame_number});
             try self.key_frames[self.current_queue].append(packets[0].header.frame_number);
             self.current_queue = (self.current_queue + 1) % NumberOfDecoders;
         }

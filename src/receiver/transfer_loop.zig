@@ -247,7 +247,7 @@ pub const TransferLoop = struct {
 
         while (iterator.next()) |entry| {
             // If greater than 1000ms add to nacks
-            if (current_time - entry.value_ptr.* > 3000) {
+            if (current_time - entry.value_ptr.* > 100) {
                 if (no_of_nacks >= packet.nacks.len) {
                     break;
                 }
@@ -326,36 +326,36 @@ pub const TransferLoop = struct {
             return .{ common.Resolution.@"1080p", common.FrameRate.@"60" };
         };
 
+        _ = average_latency;
+        _ = bandwidth;
+        _ = no_of_nacks;
+
+        return .{ common.Resolution.@"1080p", common.FrameRate.@"60" };
+
         // TODO: Make code better.
-        var resolution: common.Resolution = undefined;
-        var frame_rate: common.FrameRate = undefined;
 
-        if (no_of_nacks <= 150) {
-            frame_rate = common.FrameRate.@"60";
-        } else {
-            frame_rate = common.FrameRate.@"30";
-        }
-
-        // Resolutions_available are 1080p, 720p, 480p, 360p
-        if (bandwidth > 1000) {
-            resolution = common.Resolution.@"1080p";
-        } else if (bandwidth > 500) {
-            resolution = common.Resolution.@"720p";
-        } else if (bandwidth > 250) {
-            resolution = common.Resolution.@"480p";
-        } else {
-            resolution = common.Resolution.@"360p";
-        }
-
-        if (average_latency > 50) {
-            frame_rate = common.FrameRate.@"30";
-        }
-
+        // var resolution: common.Resolution = .@"1080p";
+        // var frame_rate: common.FrameRate = .@"60";
+        //
+        // if (no_of_nacks <= 300) {
+        //     resolution = common.Resolution.@"360p";
+        // } else if (no_of_nacks >= 200) {
+        //     resolution = common.Resolution.@"480p";
+        // } else if (no_of_nacks >= 100) {
+        //     resolution = common.Resolution.@"720p";
+        // } else {
+        //     resolution = common.Resolution.@"1080p";
+        // }
+        //
+        // if (average_latency > 500) {
+        //     frame_rate = common.FrameRate.@"30";
+        // }
+        //
         // common.print(
-        //     "Average Latency: {d}, Bandwidth: {d}, No of Nacks: {d}, Resolution: {s}, FrameRate: {}\n",
-        //     .{ average_latency, bandwidth, no_of_nacks, resolution.getResolutionString(), @intFromEnum(frame_rate) },
+        //     "Average Latency: {d}, Bandwidth: {d}, No of Nacks: {d}, Resolution: {}, Frame rate: {}\n",
+        //     .{ average_latency, bandwidth, no_of_nacks, @intFromEnum(resolution), @intFromEnum(frame_rate) },
         // );
-
-        return .{ resolution, frame_rate };
+        //
+        // return .{ resolution, frame_rate };
     }
 };

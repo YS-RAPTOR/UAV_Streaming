@@ -82,8 +82,7 @@ def create_latency_measurements(folder: Path):
                 continue
 
             latency = get_latency(frame)
-            if latency is not None:
-                f.write(f"{frame_count},{latency}\n")
+            f.write(f"{frame_count},{latency}\n")
             if frame_count % 100 == 0:
                 print(
                     f"Processing {folder}. Frames processed: {frame_count}/18000 frames"
